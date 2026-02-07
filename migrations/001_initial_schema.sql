@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS cards (
     oracle_id UUID,
     name TEXT NOT NULL,
     mana_cost TEXT,
-    cmc DECIMAL,
+    cmc DOUBLE PRECISION,
     type_line TEXT,
     oracle_text TEXT,
     colors TEXT[],

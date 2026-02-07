@@ -46,7 +46,10 @@ impl QueryExecutor {
         let cards = query_builder
             .fetch_all(&self.pool)
             .await
-            .context("Failed to execute query")?;
+            .map_err(|e| {
+                tracing::error!("Database query failed: {:?}", e);
+                anyhow::anyhow!("Failed to execute query: {}", e)
+            })?;
 
         debug!("Query returned {} cards", cards.len());
         Ok(cards)

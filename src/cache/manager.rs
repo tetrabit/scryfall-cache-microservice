@@ -35,12 +35,19 @@ impl CacheManager {
 
         // Check cache first
         if let Some((card_ids, _total)) = get_query_cache(&self.pool, &query_hash).await? {
-            debug!("Cache hit for query: {}", query);
-            let cards = get_cards_by_ids(&self.pool, &card_ids).await?;
+            debug!("Cache hit for query: {} ({} IDs)", query, card_ids.len());
 
-            if !cards.is_empty() {
-                info!("Returned {} cards from cache for query: {}", cards.len(), query);
-                return Ok(cards);
+            // Try to fetch cards from cache, but fall back to direct query if it fails
+            match get_cards_by_ids(&self.pool, &card_ids).await {
+                Ok(cards) if !cards.is_empty() => {
+                    info!("Returned {} cards from cache for query: {}", cards.len(), query);
+                    return Ok(cards);
+                }
+                Err(e) => {
+                    // Cache fetch failed, fall through to direct database query
+                    debug!("Cache fetch failed ({}), falling back to direct query", e);
+                }
+                _ => {}
             }
         }
 
@@ -59,8 +66,30 @@ impl CacheManager {
 
                 Ok(cards)
             }
-            _ => {
-                // Fall back to Scryfall API
+            Ok(cards) => {
+                // Query succeeded but returned no results
+                debug!("Query executor returned {} cards for query: {}", cards.len(), query);
+                info!("Querying Scryfall API for: {}", query);
+                let cards = self.scryfall_client.search_cards(query).await?;
+
+                if !cards.is_empty() {
+                    // Store cards in database
+                    insert_cards_batch(&self.pool, &cards).await?;
+
+                    // Store in cache
+                    let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
+                    store_query_cache(&self.pool, &query_hash, query, &card_ids, cards.len() as i32)
+                        .await
+                        .ok();
+
+                    info!("Returned {} cards from Scryfall API for query: {}", cards.len(), query);
+                }
+
+                Ok(cards)
+            }
+            Err(e) => {
+                // Query executor failed with an error
+                debug!("Query executor error for query '{}': {}", query, e);
                 info!("Querying Scryfall API for: {}", query);
                 let cards = self.scryfall_client.search_cards(query).await?;
 
