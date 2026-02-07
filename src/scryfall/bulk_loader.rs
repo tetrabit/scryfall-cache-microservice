@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Utc};
+use flate2::read::GzDecoder;
 use serde::Deserialize;
 use sqlx::PgPool;
+use std::io::Read;
 use std::time::Instant;
 use tracing::{info, warn};
 
@@ -15,16 +17,25 @@ const BATCH_SIZE: usize = 500;
 
 #[derive(Debug, Deserialize)]
 struct BulkDataList {
+    object: String,
+    has_more: bool,
     data: Vec<BulkDataInfo>,
 }
 
 #[derive(Debug, Deserialize)]
 struct BulkDataInfo {
+    object: String,
+    id: String,
     #[serde(rename = "type")]
     bulk_type: String,
-    download_uri: String,
     updated_at: String,
+    uri: String,
+    name: String,
+    description: String,
     size: i64,
+    download_uri: String,
+    content_type: String,
+    content_encoding: String,
 }
 
 pub struct BulkLoader {
@@ -87,8 +98,9 @@ impl BulkLoader {
         let total_cards = self.download_and_import(&bulk_info).await?;
 
         // Record the import
-        let updated_at = NaiveDateTime::parse_from_str(&bulk_info.updated_at, "%Y-%m-%dT%H:%M:%S%.fZ")
-            .context("Failed to parse updated_at timestamp")?;
+        let updated_at = DateTime::parse_from_rfc3339(&bulk_info.updated_at)
+            .context("Failed to parse updated_at timestamp")?
+            .naive_utc();
 
         record_bulk_import(
             &self.pool,
@@ -113,17 +125,35 @@ impl BulkLoader {
 
     /// Discover the bulk data download URI
     async fn discover_bulk_data(&self) -> Result<BulkDataInfo> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .user_agent("scryfall-cache/0.1.0")
+            .build()
+            .context("Failed to build HTTP client")?;
+
         let response = client
             .get(BULK_DATA_API)
+            .header("Accept", "application/json")
             .send()
             .await
             .context("Failed to fetch bulk data list")?;
+
+        // Check response status
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_else(|_| String::from("Unable to read response body"));
+            return Err(anyhow::anyhow!(
+                "Scryfall API returned error {}: {}",
+                status,
+                body
+            ));
+        }
 
         let bulk_list: BulkDataList = response
             .json()
             .await
             .context("Failed to parse bulk data list")?;
+
+        info!("Discovered {} bulk data sets", bulk_list.data.len());
 
         // Find the requested bulk data type
         let bulk_info = bulk_list
@@ -142,28 +172,53 @@ impl BulkLoader {
 
     /// Download and import bulk data
     async fn download_and_import(&self, bulk_info: &BulkDataInfo) -> Result<usize> {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .user_agent("scryfall-cache/0.1.0")
+            .build()
+            .context("Failed to build HTTP client")?;
+
+        info!("Downloading bulk data from {}", bulk_info.download_uri);
+        info!("Expected size: {} MB", bulk_info.size / 1_000_000);
+
         let response = client
             .get(&bulk_info.download_uri)
             .send()
             .await
             .context("Failed to download bulk data")?;
 
-        info!("Downloading bulk data from {}", bulk_info.download_uri);
-
-        // Get the response body as bytes stream
+        // Get the response body as bytes
         let bytes = response
             .bytes()
             .await
             .context("Failed to read bulk data")?;
 
-        info!("Download complete, parsing and importing cards...");
+        info!("Download complete ({} MB), parsing...", bytes.len() / 1_000_000);
 
-        // Parse JSON array
-        let json_array: Vec<serde_json::Value> = serde_json::from_slice(&bytes)
-            .context("Failed to parse bulk data JSON")?;
+        // Try to parse as JSON directly first (in case reqwest auto-decompressed)
+        let json_array: Vec<serde_json::Value> = match serde_json::from_slice(&bytes) {
+            Ok(array) => {
+                info!("Successfully parsed JSON directly (data was already decompressed)");
+                array
+            }
+            Err(_) => {
+                // If direct parsing fails, try decompressing first
+                info!("Direct JSON parsing failed, attempting gzip decompression...");
+                let mut decoder = GzDecoder::new(&bytes[..]);
+                let mut decompressed = Vec::new();
+                decoder
+                    .read_to_end(&mut decompressed)
+                    .context("Failed to decompress gzipped bulk data")?;
+
+                info!("Decompression complete ({} MB), parsing JSON...", decompressed.len() / 1_000_000);
+
+                serde_json::from_slice(&decompressed)
+                    .context("Failed to parse bulk data JSON after decompression")?
+            }
+        };
 
         let total_cards = json_array.len();
+        info!("Parsed {} cards, starting import...", total_cards);
+
         let mut imported = 0;
         let mut batch = Vec::with_capacity(BATCH_SIZE);
 
