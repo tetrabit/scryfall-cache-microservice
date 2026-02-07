@@ -48,6 +48,18 @@ impl<T: Serialize> ApiResponse<T> {
 pub struct SearchParams {
     pub q: String,
     pub limit: Option<i64>,
+    pub page: Option<usize>,
+    pub page_size: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PaginatedResponse<T> {
+    pub data: Vec<T>,
+    pub total: usize,
+    pub page: usize,
+    pub page_size: usize,
+    pub total_pages: usize,
+    pub has_more: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,18 +82,48 @@ pub async fn search_cards(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> impl IntoResponse {
-    info!("Search request: query='{}', limit={:?}", params.q, params.limit);
+    info!("Search request: query='{}', limit={:?}, page={:?}, page_size={:?}",
+        params.q, params.limit, params.page, params.page_size);
 
     match state.cache_manager.search(&params.q, params.limit).await {
         Ok(cards) => {
-            info!("Search returned {} cards", cards.len());
-            (StatusCode::OK, Json(ApiResponse::success(cards)))
+            let total = cards.len();
+
+            // Apply pagination
+            let page = params.page.unwrap_or(1).max(1);
+            let page_size = params.page_size.unwrap_or(100).min(1000).max(1); // Default 100, max 1000
+
+            let start = (page - 1) * page_size;
+            let end = (start + page_size).min(total);
+
+            let paginated_cards: Vec<Card> = if start < total {
+                cards[start..end].to_vec()
+            } else {
+                Vec::new()
+            };
+
+            let total_pages = (total + page_size - 1) / page_size;
+            let has_more = page < total_pages;
+
+            info!("Search returned {} total cards, page {}/{} ({} cards)",
+                total, page, total_pages, paginated_cards.len());
+
+            let response = PaginatedResponse {
+                data: paginated_cards,
+                total,
+                page,
+                page_size,
+                total_pages,
+                has_more,
+            };
+
+            (StatusCode::OK, Json(ApiResponse::success(response)))
         }
         Err(e) => {
             error!("Search failed: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<Vec<Card>>::error(e.to_string())),
+                Json(ApiResponse::<PaginatedResponse<Card>>::error(e.to_string())),
             )
         }
     }
