@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scryfall-cache-postgres
+    environment:
+      POSTGRES_DB: scryfall_cache
+      POSTGRES_USER: scryfall
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scryfall"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scryfall-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scryfall-cache-api
+    environment:
+      DATABASE_URL: postgresql://scryfall:${POSTGRES_PASSWORD:-password}@postgres:5432/scryfall_cache
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-10}
+      API_HOST: 0.0.0.0
+      API_PORT: 8080
+      SCRYFALL_RATE_LIMIT_PER_SECOND: ${SCRYFALL_RATE_LIMIT_PER_SECOND:-10}
+      SCRYFALL_BULK_DATA_TYPE: ${SCRYFALL_BULK_DATA_TYPE:-default_cards}
+      SCRYFALL_CACHE_TTL_HOURS: ${SCRYFALL_CACHE_TTL_HOURS:-24}
+      QUERY_CACHE_TTL_HOURS: ${QUERY_CACHE_TTL_HOURS:-24}
+      QUERY_CACHE_MAX_SIZE: ${QUERY_CACHE_MAX_SIZE:-10000}
+      RUST_LOG: ${RUST_LOG:-info,scryfall_cache=debug}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - scryfall-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  scryfall-network:
+    driver: bridge
