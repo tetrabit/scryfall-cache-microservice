@@ -1,16 +1,34 @@
 # Scryfall Cache Microservice
 
-A high-performance, Dockerized caching microservice for Scryfall Magic: The Gathering card data. Built with Rust, PostgreSQL, and designed to respect Scryfall's API rate limits while providing fast cached responses.
+A high-performance, caching microservice for Scryfall Magic: The Gathering card data. Built with Rust and **supports both PostgreSQL and SQLite backends**. Designed to respect Scryfall's API rate limits while providing fast cached responses.
 
 ## Features
 
+- **Dual Database Backends**: PostgreSQL (production) or SQLite (Electron/embedded)
 - **Bulk Data Loading**: Automatically downloads and imports 500MB+ of Scryfall card data on startup
 - **Smart Caching**: Three-tier lookup strategy (query cache → local database → Scryfall API)
 - **Full Query Support**: Parses and executes Scryfall query syntax locally
 - **Rate Limiting**: Respects Scryfall's 10 req/sec API limit with GCRA algorithm
 - **Multi-threaded**: Built on Tokio for high-performance async operations
 - **Docker Ready**: Complete Docker Compose setup with PostgreSQL
+- **Low Memory**: SQLite backend uses <100MB RAM (vs PostgreSQL's 500MB)
 - **REST API**: Clean HTTP endpoints for card searches and queries
+
+## Database Backends
+
+### PostgreSQL (Default)
+- **Use case**: Production servers, Docker deployments
+- **Memory**: ~500MB RAM
+- **Features**: Full-text search, advanced indexing, high concurrency
+- **Setup**: Requires PostgreSQL server
+
+### SQLite
+- **Use case**: Electron apps, embedded systems, development
+- **Memory**: **<100MB RAM** ✅
+- **Features**: Zero configuration, single file, bundled with binary
+- **Setup**: Auto-creates database file
+
+See [SQLITE_BACKEND.md](./SQLITE_BACKEND.md) for detailed comparison and usage.
 
 ## Architecture
 
@@ -31,20 +49,22 @@ User Request → REST API → Query Parser
 
 - **Rust** - High-performance, memory-safe systems programming
 - **Axum** - Fast, ergonomic web framework
-- **PostgreSQL** - Robust relational database with JSON support
-- **SQLx** - Async, compile-time checked SQL queries
+- **PostgreSQL** / **SQLite** - Dual backend support via trait abstraction
+- **SQLx** / **rusqlite** - Async database drivers
 - **Governor** - Production-ready rate limiting
 - **Tokio** - Async runtime for concurrent operations
 - **Docker** - Containerization and orchestration
 
 ## Quick Start
 
-### Prerequisites
+### PostgreSQL (Docker - Recommended for Production)
+
+#### Prerequisites
 
 - Docker and Docker Compose
 - At least 2GB free disk space for card data
 
-### Running with Docker Compose
+#### Running with Docker Compose
 
 1. Clone the repository:
 ```bash
@@ -67,7 +87,43 @@ docker-compose logs -f api
 curl http://localhost:8080/health
 ```
 
+### SQLite (Standalone - Recommended for Electron)
+
+#### Prerequisites
+
+- Rust toolchain (1.70+)
+
+#### Building and Running
+
+1. Clone and build:
+```bash
+git clone <repository-url>
+cd scryfall-cache-microservice
+
+# Build with SQLite backend
+cargo build --release --no-default-features --features sqlite
+```
+
+2. Run the service:
+```bash
+# Database will be auto-created at ./data/scryfall-cache.db
+export SQLITE_PATH="./data/scryfall-cache.db"
+export PORT=8080
+./target/release/scryfall-cache
+```
+
+3. Test:
+```bash
+curl http://localhost:8080/health
+```
+
+**Memory usage**: ~45-80MB (vs PostgreSQL's 500MB)
+
+See [SQLITE_BACKEND.md](./SQLITE_BACKEND.md) for Electron integration guide.
+
 ### Environment Variables
+
+#### PostgreSQL Configuration
 
 Copy `.env.example` to `.env` and customize:
 
@@ -78,6 +134,46 @@ DATABASE_MAX_CONNECTIONS=10
 
 # API Server
 API_HOST=0.0.0.0
+API_PORT=8080
+
+# Scryfall API
+SCRYFALL_API_BASE_URL=https://api.scryfall.com
+SCRYFALL_RATE_LIMIT_PER_SECOND=10
+```
+
+#### SQLite Configuration
+
+```bash
+# Database file path (optional, defaults to ./data/scryfall-cache.db)
+SQLITE_PATH=/path/to/database.db
+
+# API Server
+PORT=8080
+HOST=127.0.0.1
+```
+
+## Building from Source
+
+### PostgreSQL Build
+
+```bash
+# Default build (PostgreSQL)
+cargo build --release
+
+# Explicit PostgreSQL
+cargo build --release --features postgres
+```
+
+### SQLite Build
+
+```bash
+# SQLite only
+cargo build --release --no-default-features --features sqlite
+```
+
+Binary will be at `target/release/scryfall-cache` (~19MB stripped).
+
+## Development
 API_PORT=8080
 
 # Scryfall API
