@@ -1,26 +1,25 @@
-use anyhow::{Context, Result};
-use sqlx::PgPool;
+use anyhow::Result;
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::db::queries::{get_cards_by_ids, get_query_cache, store_query_cache, insert_cards_batch};
+use crate::db::Database;
 use crate::models::card::Card;
 use crate::query::executor::QueryExecutor;
 use crate::scryfall::client::ScryfallClient;
 use crate::utils::hash::hash_query;
 
 pub struct CacheManager {
-    pool: PgPool,
+    db: Database,
     query_executor: QueryExecutor,
     scryfall_client: ScryfallClient,
 }
 
 impl CacheManager {
-    pub fn new(pool: PgPool, scryfall_client: ScryfallClient) -> Self {
-        let query_executor = QueryExecutor::new(pool.clone());
+    pub fn new(db: Database, scryfall_client: ScryfallClient) -> Self {
+        let query_executor = QueryExecutor::new(db.clone());
 
         Self {
-            pool,
+            db,
             query_executor,
             scryfall_client,
         }
@@ -34,11 +33,11 @@ impl CacheManager {
         let query_hash = hash_query(query);
 
         // Check cache first
-        if let Some((card_ids, _total)) = get_query_cache(&self.pool, &query_hash).await? {
+        if let Some((card_ids, _total)) = self.db.get_query_cache(&query_hash).await? {
             debug!("Cache hit for query: {} ({} IDs)", query, card_ids.len());
 
             // Try to fetch cards from cache, but fall back to direct query if it fails
-            match get_cards_by_ids(&self.pool, &card_ids).await {
+            match self.db.get_cards_by_ids(&card_ids).await {
                 Ok(cards) if !cards.is_empty() => {
                     info!("Returned {} cards from cache for query: {}", cards.len(), query);
                     return Ok(cards);
@@ -60,7 +59,7 @@ impl CacheManager {
 
                 // Store in cache
                 let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
-                store_query_cache(&self.pool, &query_hash, query, &card_ids, cards.len() as i32)
+                self.db.store_query_cache(&query_hash, &card_ids, 24)
                     .await
                     .ok();
 
@@ -74,11 +73,11 @@ impl CacheManager {
 
                 if !cards.is_empty() {
                     // Store cards in database
-                    insert_cards_batch(&self.pool, &cards).await?;
+                    self.db.insert_cards_batch(&cards).await?;
 
                     // Store in cache
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
-                    store_query_cache(&self.pool, &query_hash, query, &card_ids, cards.len() as i32)
+                    self.db.store_query_cache(&query_hash, &card_ids, 24)
                         .await
                         .ok();
 
@@ -95,11 +94,11 @@ impl CacheManager {
 
                 if !cards.is_empty() {
                     // Store cards in database
-                    insert_cards_batch(&self.pool, &cards).await?;
+                    self.db.insert_cards_batch(&cards).await?;
 
                     // Store in cache
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
-                    store_query_cache(&self.pool, &query_hash, query, &card_ids, cards.len() as i32)
+                    self.db.store_query_cache(&query_hash, &card_ids, 24)
                         .await
                         .ok();
 
@@ -116,7 +115,7 @@ impl CacheManager {
         debug!("Cache get card by ID: {}", id);
 
         // Check local database first
-        if let Ok(Some(card)) = crate::db::queries::get_card_by_id(&self.pool, id).await {
+        if let Ok(Some(card)) = self.db.get_card_by_id(id).await {
             debug!("Found card in local database: {}", card.name);
             return Ok(Some(card));
         }
@@ -125,7 +124,7 @@ impl CacheManager {
         debug!("Card not in database, querying Scryfall API");
         if let Some(card) = self.scryfall_client.get_card_by_id(id).await? {
             // Store in database
-            insert_cards_batch(&self.pool, &[card.clone()]).await?;
+            self.db.insert_cards_batch(&[card.clone()]).await?;
             info!("Fetched and cached card from Scryfall: {}", card.name);
             return Ok(Some(card));
         }
@@ -138,7 +137,7 @@ impl CacheManager {
         debug!("Cache search by name: {} (fuzzy={})", name, fuzzy);
 
         // Try local database first
-        let cards = crate::db::queries::search_cards_by_name(&self.pool, name, 1).await?;
+        let cards = self.db.search_cards_by_name(name, 1).await?;
         if let Some(card) = cards.first() {
             debug!("Found card in local database: {}", card.name);
             return Ok(Some(card.clone()));
@@ -148,7 +147,7 @@ impl CacheManager {
         debug!("Card not in database, querying Scryfall API");
         if let Some(card) = self.scryfall_client.get_card_by_name(name, fuzzy).await? {
             // Store in database
-            insert_cards_batch(&self.pool, &[card.clone()]).await?;
+            self.db.insert_cards_batch(&[card.clone()]).await?;
             info!("Fetched and cached card from Scryfall: {}", card.name);
             return Ok(Some(card));
         }
@@ -158,19 +157,12 @@ impl CacheManager {
 
     /// Get cache statistics
     pub async fn get_stats(&self) -> Result<CacheStats> {
-        let card_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM cards")
-            .fetch_one(&self.pool)
-            .await
-            .context("Failed to get card count")?;
-
-        let cache_entry_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM query_cache")
-            .fetch_one(&self.pool)
-            .await
-            .context("Failed to get cache entry count")?;
+        let total_cards = self.db.get_card_count().await?;
+        let total_cache_entries = self.db.get_cache_entry_count().await?;
 
         Ok(CacheStats {
-            total_cards: card_count.0,
-            total_cache_entries: cache_entry_count.0,
+            total_cards,
+            total_cache_entries,
         })
     }
 }

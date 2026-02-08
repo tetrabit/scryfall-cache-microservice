@@ -1,12 +1,14 @@
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "postgres")]
 use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// A Magic: The Gathering card from the Scryfall database
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[cfg_attr(feature = "postgres", derive(FromRow))]
 pub struct Card {
     pub id: Uuid,
     pub oracle_id: Option<Uuid>,

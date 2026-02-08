@@ -16,8 +16,6 @@ use api::handlers::AppStateInner;
 use api::routes::create_router;
 use cache::manager::CacheManager;
 use config::Config;
-use db::connection::{create_pool, test_connection};
-use db::schema::run_migrations;
 use scryfall::bulk_loader::BulkLoader;
 use scryfall::client::ScryfallClient;
 
@@ -38,28 +36,32 @@ async fn main() -> Result<()> {
     let config = Config::from_env().context("Failed to load configuration")?;
     info!("Configuration loaded successfully");
 
-    // Create database connection pool
+    // Initialize database backend
     info!("Connecting to database...");
-    let pool = create_pool(&config.database)
+    let db = db::init_database(&config.database)
         .await
-        .context("Failed to create database connection pool")?;
-
-    // Test database connection
-    test_connection(&pool)
+        .context("Failed to initialize database")?;
+    
+    db.test_connection()
         .await
         .context("Failed to test database connection")?;
     info!("Database connection established");
 
-    // Run migrations
-    run_migrations(&pool)
-        .await
-        .context("Failed to run database migrations")?;
+    // Run migrations (PostgreSQL only)
+    #[cfg(feature = "postgres")]
+    {
+        if let Some(pg_backend) = db.as_any().downcast_ref::<db::PostgresBackend>() {
+            db::schema::run_migrations(pg_backend.pool())
+                .await
+                .context("Failed to run database migrations")?;
+        }
+    }
 
     // Initialize Scryfall client
     let scryfall_client = ScryfallClient::new(&config.scryfall);
 
     // Initialize bulk loader
-    let bulk_loader = BulkLoader::new(pool.clone(), config.scryfall.clone());
+    let bulk_loader = BulkLoader::new(db.clone(), config.scryfall.clone());
 
     // Load bulk data if needed
     if bulk_loader.should_load().await? {
@@ -73,7 +75,7 @@ async fn main() -> Result<()> {
     }
 
     // Initialize cache manager
-    let cache_manager = CacheManager::new(pool.clone(), scryfall_client);
+    let cache_manager = CacheManager::new(db.clone(), scryfall_client);
 
     // Create application state
     let state = Arc::new(AppStateInner {

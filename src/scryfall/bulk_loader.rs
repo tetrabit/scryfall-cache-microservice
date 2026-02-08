@@ -1,15 +1,13 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use flate2::read::GzDecoder;
 use serde::Deserialize;
-use sqlx::PgPool;
 use std::io::Read;
 use std::time::Instant;
 use tracing::{info, warn};
 
 use crate::config::ScryfallConfig;
-use crate::db::queries::{insert_cards_batch, record_bulk_import};
-use crate::db::schema::{get_last_bulk_import, check_bulk_data_loaded};
+use crate::db::Database;
 use crate::models::card::Card;
 
 const BULK_DATA_API: &str = "https://api.scryfall.com/bulk-data";
@@ -39,19 +37,19 @@ struct BulkDataInfo {
 }
 
 pub struct BulkLoader {
-    pool: PgPool,
+    db: Database,
     config: ScryfallConfig,
 }
 
 impl BulkLoader {
-    pub fn new(pool: PgPool, config: ScryfallConfig) -> Self {
-        Self { pool, config }
+    pub fn new(db: Database, config: ScryfallConfig) -> Self {
+        Self { db, config }
     }
 
     /// Check if bulk data should be loaded
     pub async fn should_load(&self) -> Result<bool> {
         // Check if database has any cards
-        let has_cards = check_bulk_data_loaded(&self.pool).await?;
+        let has_cards = self.db.check_bulk_data_loaded().await?;
 
         if !has_cards {
             info!("No cards in database, bulk data load required");
@@ -59,7 +57,7 @@ impl BulkLoader {
         }
 
         // Check when last import was done
-        let last_import = get_last_bulk_import(&self.pool).await?;
+        let last_import = self.db.get_last_bulk_import().await?;
 
         if let Some(last_import) = last_import {
             let hours_since_import = chrono::Utc::now()
@@ -98,17 +96,15 @@ impl BulkLoader {
         let total_cards = self.download_and_import(&bulk_info).await?;
 
         // Record the import
-        let updated_at = DateTime::parse_from_rfc3339(&bulk_info.updated_at)
+        let _updated_at = DateTime::parse_from_rfc3339(&bulk_info.updated_at)
             .context("Failed to parse updated_at timestamp")?
             .naive_utc();
 
-        record_bulk_import(
-            &self.pool,
-            &bulk_info.bulk_type,
-            &bulk_info.download_uri,
-            updated_at,
+        // Get the bulk type for the source field
+        let source = bulk_info.download_uri.clone();
+        self.db.record_bulk_import(
             total_cards as i32,
-            bulk_info.size,
+            &source,
         )
         .await?;
 
@@ -228,7 +224,7 @@ impl BulkLoader {
                     batch.push(card);
 
                     if batch.len() >= BATCH_SIZE {
-                        insert_cards_batch(&self.pool, &batch).await?;
+                        self.db.insert_cards_batch(&batch).await?;
                         imported += batch.len();
                         batch.clear();
 
@@ -245,7 +241,7 @@ impl BulkLoader {
 
         // Import remaining cards
         if !batch.is_empty() {
-            insert_cards_batch(&self.pool, &batch).await?;
+            self.db.insert_cards_batch(&batch).await?;
             imported += batch.len();
         }
 

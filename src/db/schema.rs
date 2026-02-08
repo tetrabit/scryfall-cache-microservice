@@ -1,9 +1,14 @@
+#[cfg(feature = "postgres")]
 use anyhow::{Context, Result};
+#[cfg(feature = "postgres")]
 use sqlx::PgPool;
+#[cfg(feature = "postgres")]
 use tracing::info;
 
+#[cfg(feature = "postgres")]
 const MIGRATION_SQL: &str = include_str!("../../migrations/001_initial_schema.sql");
 
+#[cfg(feature = "postgres")]
 pub async fn run_migrations(pool: &PgPool) -> Result<()> {
     info!("Running database migrations...");
 
@@ -27,6 +32,7 @@ pub async fn run_migrations(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "postgres")]
 fn split_sql_statements(sql: &str) -> Vec<String> {
     let mut statements = Vec::new();
     let mut current = String::new();
@@ -86,6 +92,7 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
     statements
 }
 
+#[cfg(feature = "postgres")]
 pub async fn check_bulk_data_loaded(pool: &PgPool) -> Result<bool> {
     let result: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM cards")
         .fetch_one(pool)
@@ -95,6 +102,7 @@ pub async fn check_bulk_data_loaded(pool: &PgPool) -> Result<bool> {
     Ok(result.0 > 0)
 }
 
+#[cfg(feature = "postgres")]
 pub async fn get_card_count(pool: &PgPool) -> Result<i64> {
     let result: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM cards")
         .fetch_one(pool)
@@ -104,6 +112,7 @@ pub async fn get_card_count(pool: &PgPool) -> Result<i64> {
     Ok(result.0)
 }
 
+#[cfg(feature = "postgres")]
 pub async fn get_last_bulk_import(pool: &PgPool) -> Result<Option<chrono::NaiveDateTime>> {
     let result: Option<(chrono::NaiveDateTime,)> = sqlx::query_as(
         "SELECT imported_at FROM bulk_data_metadata ORDER BY imported_at DESC LIMIT 1"

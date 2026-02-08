@@ -1,17 +1,17 @@
 use anyhow::{Context, Result};
-use sqlx::PgPool;
 use tracing::debug;
 
+use crate::db::Database;
 use crate::models::card::Card;
 use crate::query::parser::{Filter, Operator, QueryNode, QueryParser};
 
 pub struct QueryExecutor {
-    pool: PgPool,
+    db: Database,
 }
 
 impl QueryExecutor {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(db: Database) -> Self {
+        Self { db }
     }
 
     /// Execute a Scryfall query and return matching cards
@@ -35,17 +35,11 @@ impl QueryExecutor {
         debug!("Generated SQL: {}", sql);
 
         let limit = limit.unwrap_or(100);
-        let mut query_builder = sqlx::query_as::<_, Card>(&sql);
+        
+        let mut params_with_limit = params;
+        params_with_limit.push(limit.to_string());
 
-        // Bind all parameters
-        for param in params {
-            query_builder = query_builder.bind(param);
-        }
-        query_builder = query_builder.bind(limit);
-
-        let cards = query_builder
-            .fetch_all(&self.pool)
-            .await
+        let cards = self.db.execute_raw_query(&sql, &params_with_limit).await
             .map_err(|e| {
                 tracing::error!("Database query failed: {:?}", e);
                 anyhow::anyhow!("Failed to execute query: {}", e)
@@ -257,14 +251,21 @@ mod tests {
             value: "lightning".to_string(),
         };
 
+        // This test only checks the WHERE clause building logic,
+        // which doesn't require a database connection
+        let mock_db = std::sync::Arc::new(
+            crate::db::postgres::PostgresBackend::new(
+                sqlx::PgPoolOptions::new()
+                    .max_connections(1)
+                    .connect_lazy("postgresql://test@localhost/test")
+            )
+        ) as crate::db::Database;
+        
+        let executor = QueryExecutor::new(mock_db);
         let mut params = Vec::new();
-        let clause = QueryExecutor::new(
-            sqlx::PgPool::connect("postgresql://localhost/test")
-                .await
-                .unwrap()
-        )
-        .build_filter_clause(&filter, &mut params)
-        .unwrap();
+        let clause = executor
+            .build_filter_clause(&filter, &mut params)
+            .unwrap();
 
         assert!(clause.contains("to_tsvector"));
         assert_eq!(params.len(), 1);
