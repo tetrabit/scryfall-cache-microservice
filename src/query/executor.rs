@@ -56,6 +56,88 @@ impl QueryExecutor {
         Ok(cards)
     }
 
+    /// Count total number of matching cards without fetching them
+    pub async fn count_matches(&self, query: &str) -> Result<usize> {
+        debug!("Counting matches for query: {}", query);
+
+        // Parse the query
+        let ast = QueryParser::parse(query)
+            .context("Failed to parse query")?;
+
+        // Build SQL WHERE clause
+        let (where_clause, params) = self.build_where_clause(&ast)?;
+
+        // Build COUNT query
+        let sql = format!(
+            "SELECT COUNT(*) FROM cards WHERE {}",
+            where_clause
+        );
+
+        debug!("Generated COUNT SQL: {}", sql);
+
+        // Execute count query
+        let count = self.db.count_query(&sql, &params).await
+            .map_err(|e| {
+                tracing::error!("Count query failed: {:?}", e);
+                anyhow::anyhow!("Failed to count matches: {}", e)
+            })?;
+
+        debug!("Query matched {} cards", count);
+        Ok(count)
+    }
+
+    /// Execute a paginated query, returning only the requested page of results
+    pub async fn execute_paginated(
+        &self,
+        query: &str,
+        page: usize,
+        page_size: usize,
+    ) -> Result<(Vec<Card>, usize)> {
+        debug!("Executing paginated query: query='{}', page={}, page_size={}", query, page, page_size);
+
+        // Parse the query
+        let ast = QueryParser::parse(query)
+            .context("Failed to parse query")?;
+
+        // Build SQL WHERE clause
+        let (where_clause, params) = self.build_where_clause(&ast)?;
+
+        // First, get total count (fast - no data transfer)
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM cards WHERE {}",
+            where_clause
+        );
+        let total = self.db.count_query(&count_sql, &params).await
+            .context("Failed to count total matches")?;
+
+        // Calculate offset
+        let offset = (page.saturating_sub(1)) * page_size;
+
+        // Build paginated query with LIMIT and OFFSET
+        let sql = format!(
+            "SELECT * FROM cards WHERE {} ORDER BY name LIMIT {} OFFSET {}",
+            where_clause,
+            page_size,
+            offset
+        );
+
+        debug!("Generated paginated SQL: {}", sql);
+        debug!("Total matches: {}, fetching page {} ({} cards starting at offset {})", 
+               total, page, page_size, offset);
+
+        // Execute query for only the requested page
+        let cards = self.db.execute_raw_query(&sql, &params).await
+            .map_err(|e| {
+                tracing::error!("Paginated query failed: {:?}", e);
+                anyhow::anyhow!("Failed to execute paginated query: {}", e)
+            })?;
+
+        debug!("Query returned {} cards (page {} of {})", 
+               cards.len(), page, (total + page_size - 1) / page_size);
+
+        Ok((cards, total))
+    }
+
     /// Build WHERE clause from AST
     fn build_where_clause(&self, node: &QueryNode) -> Result<(String, Vec<String>)> {
         let mut params = Vec::new();

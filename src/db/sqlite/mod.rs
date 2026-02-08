@@ -115,6 +115,19 @@ impl DatabaseBackend for SqliteBackend {
         }).await?
     }
 
+    async fn count_query(
+        &self,
+        sql: &str,
+        params: &[String],
+    ) -> Result<usize> {
+        let pool = self.pool.clone();
+        let sql = sql.to_string();
+        let params = params.to_vec();
+        tokio::task::spawn_blocking(move || {
+            queries::count_query(&pool, &sql, &params)
+        }).await?
+    }
+
     async fn check_bulk_data_loaded(&self) -> Result<bool> {
         let pool = self.pool.clone();
         tokio::task::spawn_blocking(move || {

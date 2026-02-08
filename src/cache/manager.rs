@@ -110,6 +110,80 @@ impl CacheManager {
         }
     }
 
+    /// Search for cards with pagination (optimized - fetches only requested page)
+    pub async fn search_paginated(
+        &self,
+        query: &str,
+        page: usize,
+        page_size: usize,
+    ) -> Result<(Vec<Card>, usize)> {
+        debug!("Cache paginated search for query: {} (page {}, page_size {})", query, page, page_size);
+
+        // For paginated queries, we can't rely on query_cache as easily
+        // since it stores all card IDs but pagination happens at query level
+        // Instead, we directly use the paginated query executor
+
+        match self.query_executor.execute_paginated(query, page, page_size).await {
+            Ok((cards, total)) => {
+                if !cards.is_empty() || total > 0 {
+                    info!("Returned {} cards from local database for query: {} (page {}/{})", 
+                          cards.len(), query, page, (total + page_size - 1) / page_size);
+                    Ok((cards, total))
+                } else {
+                    // Query returned no results - fall back to Scryfall API
+                    debug!("Local query returned no results, querying Scryfall API");
+                    info!("Querying Scryfall API for: {}", query);
+                    let cards = self.scryfall_client.search_cards(query).await?;
+
+                    if !cards.is_empty() {
+                        // Store cards in database
+                        self.db.insert_cards_batch(&cards).await?;
+                        info!("Stored {} cards from Scryfall API for query: {}", cards.len(), query);
+                    }
+
+                    // For Scryfall API fallback, apply pagination in-memory
+                    // since we fetched all results
+                    let total = cards.len();
+                    let start = (page.saturating_sub(1)) * page_size;
+                    let end = (start + page_size).min(total);
+
+                    let paginated_cards = if start < total {
+                        cards[start..end].to_vec()
+                    } else {
+                        Vec::new()
+                    };
+
+                    Ok((paginated_cards, total))
+                }
+            }
+            Err(e) => {
+                // Query executor failed - fall back to Scryfall API
+                debug!("Query executor error: {}", e);
+                info!("Querying Scryfall API for: {}", query);
+                let cards = self.scryfall_client.search_cards(query).await?;
+
+                if !cards.is_empty() {
+                    // Store cards in database
+                    self.db.insert_cards_batch(&cards).await?;
+                    info!("Stored {} cards from Scryfall API for query: {}", cards.len(), query);
+                }
+
+                // Apply pagination in-memory
+                let total = cards.len();
+                let start = (page.saturating_sub(1)) * page_size;
+                let end = (start + page_size).min(total);
+
+                let paginated_cards = if start < total {
+                    cards[start..end].to_vec()
+                } else {
+                    Vec::new()
+                };
+
+                Ok((paginated_cards, total))
+            }
+        }
+    }
+
     /// Get a card by ID with caching
     pub async fn get_card(&self, id: Uuid) -> Result<Option<Card>> {
         debug!("Cache get card by ID: {}", id);

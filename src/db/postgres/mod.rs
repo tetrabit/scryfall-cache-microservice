@@ -74,6 +74,14 @@ impl DatabaseBackend for PostgresBackend {
         queries::execute_raw_query(&self.pool, sql, params).await
     }
 
+    async fn count_query(
+        &self,
+        sql: &str,
+        params: &[String],
+    ) -> Result<usize> {
+        queries::count_query(&self.pool, sql, params).await
+    }
+
     async fn check_bulk_data_loaded(&self) -> Result<bool> {
         queries::check_bulk_data_loaded(&self.pool).await
     }

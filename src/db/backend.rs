@@ -52,6 +52,13 @@ pub trait DatabaseBackend: Send + Sync {
         params: &[String],
     ) -> Result<Vec<Card>>;
 
+    /// Execute a COUNT query and return the result
+    async fn count_query(
+        &self,
+        sql: &str,
+        params: &[String],
+    ) -> Result<usize>;
+
     /// Check if bulk data is loaded (count of cards > 0)
     async fn check_bulk_data_loaded(&self) -> Result<bool>;
 

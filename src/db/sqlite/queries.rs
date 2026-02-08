@@ -328,6 +328,21 @@ pub fn execute_raw_query(pool: &SqlitePool, sql: &str, params: &[String]) -> Res
     Ok(cards)
 }
 
+/// Execute a COUNT query and return the result
+pub fn count_query(pool: &SqlitePool, sql: &str, params: &[String]) -> Result<usize> {
+    let conn = pool.get().context("Failed to get connection from pool")?;
+    
+    let mut stmt = conn
+        .prepare(sql)
+        .context("Failed to prepare COUNT statement")?;
+
+    let count: i64 = stmt
+        .query_row(rusqlite::params_from_iter(params.iter()), |row| row.get(0))
+        .context("Failed to execute COUNT query")?;
+
+    Ok(count as usize)
+}
+
 /// Check if bulk data is loaded
 pub fn check_bulk_data_loaded(pool: &SqlitePool) -> Result<bool> {
     let conn = pool.get().context("Failed to get connection from pool")?;

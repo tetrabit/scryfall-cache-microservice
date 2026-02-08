@@ -185,31 +185,21 @@ pub async fn search_cards(
     info!("Search request: query='{}', limit={:?}, page={:?}, page_size={:?}",
         params.q, params.limit, params.page, params.page_size);
 
-    match state.cache_manager.search(&params.q, params.limit).await {
-        Ok(cards) => {
-            let total = cards.len();
+    // Use pagination parameters
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(100).min(1000).max(1);
 
-            // Apply pagination
-            let page = params.page.unwrap_or(1).max(1);
-            let page_size = params.page_size.unwrap_or(100).min(1000).max(1); // Default 100, max 1000
-
-            let start = (page - 1) * page_size;
-            let end = (start + page_size).min(total);
-
-            let paginated_cards: Vec<Card> = if start < total {
-                cards[start..end].to_vec()
-            } else {
-                Vec::new()
-            };
-
+    // Use the new paginated search which is much faster
+    match state.cache_manager.search_paginated(&params.q, page, page_size).await {
+        Ok((cards, total)) => {
             let total_pages = (total + page_size - 1) / page_size;
             let has_more = page < total_pages;
 
-            info!("Search returned {} total cards, page {}/{} ({} cards)",
-                total, page, total_pages, paginated_cards.len());
+            info!("Search returned {} cards (page {}/{}), {} total matches",
+                cards.len(), page, total_pages, total);
 
             let response = PaginatedResponse {
-                data: paginated_cards,
+                data: cards,
                 total,
                 page,
                 page_size,

@@ -261,6 +261,23 @@ pub async fn execute_raw_query(pool: &PgPool, sql: &str, params: &[String]) -> R
     Ok(cards)
 }
 
+/// Execute a COUNT query and return the result
+pub async fn count_query(pool: &PgPool, sql: &str, params: &[String]) -> Result<usize> {
+    let mut query_builder = sqlx::query_scalar::<_, i64>(sql);
+
+    // Bind all parameters
+    for param in params {
+        query_builder = query_builder.bind(param.clone());
+    }
+
+    let count = query_builder
+        .fetch_one(pool)
+        .await
+        .context("Failed to execute COUNT query")?;
+
+    Ok(count as usize)
+}
+
 /// Check if bulk data is loaded
 pub async fn check_bulk_data_loaded(pool: &PgPool) -> Result<bool> {
     let result: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM cards")
