@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use api::handlers::{AppState, AppStateInner};
+use api::handlers::AppStateInner;
 use api::routes::create_router;
 use cache::manager::CacheManager;
 use config::Config;

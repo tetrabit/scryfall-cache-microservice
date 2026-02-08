@@ -175,8 +175,11 @@ impl CacheManager {
     }
 }
 
-#[derive(Debug, serde::Serialize)]
+/// Cache statistics
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
 pub struct CacheStats {
+    /// Total number of cards in the database
     pub total_cards: i64,
+    /// Total number of cached query results
     pub total_cache_entries: i64,
 }

@@ -6,6 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{error, info};
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::cache::manager::{CacheManager, CacheStats};
@@ -19,10 +20,14 @@ pub struct AppStateInner {
     pub bulk_loader: BulkLoader,
 }
 
-#[derive(Debug, Serialize)]
+/// Generic API response wrapper
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T> {
+    /// Whether the request was successful
     pub success: bool,
+    /// Response data (present if success is true)
     pub data: Option<T>,
+    /// Error message (present if success is false)
     pub error: Option<String>,
 }
 
@@ -44,31 +49,116 @@ impl<T: Serialize> ApiResponse<T> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+/// Search query parameters
+#[derive(Debug, Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct SearchParams {
+    /// Scryfall search query (e.g., "c:red cmc:1" or "Sol Ring")
     pub q: String,
+    /// Maximum number of results to return (default: unlimited)
     pub limit: Option<i64>,
+    /// Page number for pagination (starts at 1)
     pub page: Option<usize>,
+    /// Number of results per page (default: 100, max: 1000)
     pub page_size: Option<usize>,
 }
 
-#[derive(Debug, Serialize)]
+/// Paginated response wrapper
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PaginatedResponse<T> {
+    /// Array of results for the current page
     pub data: Vec<T>,
+    /// Total number of results across all pages
     pub total: usize,
+    /// Current page number
     pub page: usize,
+    /// Number of results per page
     pub page_size: usize,
+    /// Total number of pages
     pub total_pages: usize,
+    /// Whether there are more pages available
     pub has_more: bool,
 }
 
-#[derive(Debug, Deserialize)]
+/// Named card lookup parameters
+#[derive(Debug, Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
 pub struct NamedParams {
+    /// Fuzzy card name search (e.g., "light bolt" matches "Lightning Bolt")
     pub fuzzy: Option<String>,
+    /// Exact card name search (case-insensitive)
     pub exact: Option<String>,
 }
 
+// Concrete response types for OpenAPI generation
+/// Card response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CardResponse {
+    /// Whether the request was successful
+    pub success: bool,
+    /// Response data (present if success is true)
+    pub data: Option<Card>,
+    /// Error message (present if success is false)
+    pub error: Option<String>,
+}
+
+/// Paginated card list response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CardListResponse {
+    /// Whether the request was successful
+    pub success: bool,
+    /// Response data (present if success is true)
+    pub data: Option<PaginatedCardData>,
+    /// Error message (present if success is false)
+    pub error: Option<String>,
+}
+
+/// Paginated card data
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedCardData {
+    /// Array of results for the current page
+    pub data: Vec<Card>,
+    /// Total number of results across all pages
+    pub total: usize,
+    /// Current page number
+    pub page: usize,
+    /// Number of results per page
+    pub page_size: usize,
+    /// Total number of pages
+    pub total_pages: usize,
+    /// Whether there are more pages available
+    pub has_more: bool,
+}
+
+/// Cache statistics response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StatsResponse {
+    /// Whether the request was successful
+    pub success: bool,
+    /// Response data (present if success is true)
+    pub data: Option<CacheStats>,
+    /// Error message (present if success is false)
+    pub error: Option<String>,
+}
+
+/// Reload response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ReloadResponse {
+    /// Whether the request was successful
+    pub success: bool,
+    /// Response data (present if success is true)
+    pub data: Option<String>,
+    /// Error message (present if success is false)
+    pub error: Option<String>,
+}
+
 /// Health check endpoint
+#[utoipa::path(
+    get,
+    path = "/health",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is healthy", body = serde_json::Value)
+    )
+)]
 pub async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "healthy",
@@ -78,6 +168,16 @@ pub async fn health() -> impl IntoResponse {
 }
 
 /// Search for cards
+#[utoipa::path(
+    get,
+    path = "/cards/search",
+    tag = "cards",
+    params(SearchParams),
+    responses(
+        (status = 200, description = "Search results", body = CardListResponse),
+        (status = 500, description = "Internal server error", body = CardListResponse)
+    )
+)]
 pub async fn search_cards(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
@@ -130,6 +230,19 @@ pub async fn search_cards(
 }
 
 /// Get a specific card by ID
+#[utoipa::path(
+    get,
+    path = "/cards/{id}",
+    tag = "cards",
+    params(
+        ("id" = Uuid, Path, description = "Card UUID")
+    ),
+    responses(
+        (status = 200, description = "Card found", body = CardResponse),
+        (status = 404, description = "Card not found", body = CardResponse),
+        (status = 500, description = "Internal server error", body = CardResponse)
+    )
+)]
 pub async fn get_card(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -159,6 +272,18 @@ pub async fn get_card(
 }
 
 /// Get a card by name (fuzzy or exact)
+#[utoipa::path(
+    get,
+    path = "/cards/named",
+    tag = "cards",
+    params(NamedParams),
+    responses(
+        (status = 200, description = "Card found", body = CardResponse),
+        (status = 400, description = "Bad request - must provide fuzzy or exact parameter", body = CardResponse),
+        (status = 404, description = "Card not found", body = CardResponse),
+        (status = 500, description = "Internal server error", body = CardResponse)
+    )
+)]
 pub async fn get_card_by_name(
     State(state): State<AppState>,
     Query(params): Query<NamedParams>,
@@ -201,6 +326,15 @@ pub async fn get_card_by_name(
 }
 
 /// Get cache statistics
+#[utoipa::path(
+    get,
+    path = "/stats",
+    tag = "statistics",
+    responses(
+        (status = 200, description = "Cache statistics", body = StatsResponse),
+        (status = 500, description = "Internal server error", body = StatsResponse)
+    )
+)]
 pub async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
     info!("Stats request");
 
@@ -220,6 +354,15 @@ pub async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 /// Force reload bulk data
+#[utoipa::path(
+    post,
+    path = "/admin/reload",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Bulk data reload completed", body = ReloadResponse),
+        (status = 500, description = "Reload failed", body = ReloadResponse)
+    )
+)]
 pub async fn admin_reload(State(state): State<AppState>) -> impl IntoResponse {
     info!("Admin reload request");
 

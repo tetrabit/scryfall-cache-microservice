@@ -2,9 +2,11 @@ use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+/// A Magic: The Gathering card from the Scryfall database
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Card {
     pub id: Uuid,
     pub oracle_id: Option<Uuid>,
