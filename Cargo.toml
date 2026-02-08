@@ -3,6 +3,11 @@ name = "scryfall-cache"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["postgres"]
+postgres = ["sqlx"]
+sqlite = ["rusqlite", "r2d2", "r2d2_sqlite"]
+
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["macros"] }
@@ -11,9 +16,15 @@ tower-http = { version = "0.5", features = ["trace", "cors"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
 
-# Database
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+# Database - PostgreSQL
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"], optional = true }
+
+# Database - SQLite
+rusqlite = { version = "0.31", features = ["bundled", "uuid", "serde_json", "chrono"], optional = true }
+r2d2 = { version = "0.8", optional = true }
+r2d2_sqlite = { version = "0.24", optional = true }
 
 # Rate limiting
 governor = "0.6"
