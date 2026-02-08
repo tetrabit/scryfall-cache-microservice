@@ -25,21 +25,28 @@ impl QueryExecutor {
         // Build SQL WHERE clause
         let (where_clause, params) = self.build_where_clause(&ast)?;
 
-        // Build and execute SQL query
-        let sql = format!(
-            "SELECT * FROM cards WHERE {} ORDER BY name LIMIT ${}",
-            where_clause,
-            params.len() + 1
-        );
+        // Build SQL query with optional LIMIT clause
+        let (sql, final_params) = if let Some(limit_val) = limit {
+            let sql = format!(
+                "SELECT * FROM cards WHERE {} ORDER BY name LIMIT ${}",
+                where_clause,
+                params.len() + 1
+            );
+            let mut params_with_limit = params;
+            params_with_limit.push(limit_val.to_string());
+            (sql, params_with_limit)
+        } else {
+            // No limit - return all matching cards
+            let sql = format!(
+                "SELECT * FROM cards WHERE {} ORDER BY name",
+                where_clause
+            );
+            (sql, params)
+        };
 
         debug!("Generated SQL: {}", sql);
 
-        let limit = limit.unwrap_or(100);
-        
-        let mut params_with_limit = params;
-        params_with_limit.push(limit.to_string());
-
-        let cards = self.db.execute_raw_query(&sql, &params_with_limit).await
+        let cards = self.db.execute_raw_query(&sql, &final_params).await
             .map_err(|e| {
                 tracing::error!("Database query failed: {:?}", e);
                 anyhow::anyhow!("Failed to execute query: {}", e)

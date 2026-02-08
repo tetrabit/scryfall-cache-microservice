@@ -27,7 +27,7 @@ pub fn create_pool(database_path: &str) -> Result<SqlitePool> {
 
 pub fn test_connection(pool: &SqlitePool) -> Result<()> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    conn.execute("SELECT 1", params![])
+    conn.query_row("SELECT 1", params![], |_| Ok(()))
         .context("Failed to test database connection")?;
     Ok(())
 }
