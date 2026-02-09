@@ -58,6 +58,14 @@ impl DatabaseBackend for SqliteBackend {
         }).await?
     }
 
+    async fn autocomplete_card_names(&self, prefix: &str, limit: i64) -> Result<Vec<String>> {
+        let pool = self.pool.clone();
+        let prefix = prefix.to_string();
+        tokio::task::spawn_blocking(move || {
+            queries::autocomplete_card_names(&pool, &prefix, limit)
+        }).await?
+    }
+
     async fn store_query_cache(
         &self,
         query_hash: &str,

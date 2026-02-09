@@ -278,6 +278,46 @@ curl "http://localhost:8080/cards/named?fuzzy=lightning+bolt"
 curl "http://localhost:8080/cards/named?exact=Lightning+Bolt"
 ```
 
+### Autocomplete Card Names
+
+Get card name suggestions based on a prefix (case-insensitive). Returns up to 20 matching card names, sorted alphabetically. Minimum 2 characters required.
+
+```bash
+GET /cards/autocomplete?q=<prefix>
+```
+
+Examples:
+```bash
+# Get cards starting with "light"
+curl "http://localhost:8080/cards/autocomplete?q=light"
+
+# Get cards starting with "sol r"
+curl "http://localhost:8080/cards/autocomplete?q=sol+r"
+
+# Get cards starting with "force"
+curl "http://localhost:8080/cards/autocomplete?q=force"
+```
+
+Response (Scryfall catalog format):
+```json
+{
+  "object": "catalog",
+  "data": [
+    "Light Up the Night",
+    "Light Up the Stage",
+    "Lightning Axe",
+    "Lightning Bolt",
+    "Lightning Helix",
+    "Lightning Strike",
+    "Lightspeed"
+  ]
+}
+```
+
+**Performance**: Optimized with database indexes for <100ms response time. Perfect for search-as-you-type interfaces.
+
+**Cache**: Results are not cached as autocomplete queries are typically diverse and short-lived.
+
 ### Cache Statistics
 
 ```bash

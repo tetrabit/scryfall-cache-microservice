@@ -153,6 +153,31 @@ pub async fn search_cards_by_name(pool: &PgPool, name: &str, limit: i64) -> Resu
     Ok(cards)
 }
 
+/// Autocomplete card names by prefix (case-insensitive)
+/// Uses the existing idx_cards_name GIN index for fast prefix matching
+pub async fn autocomplete_card_names(pool: &PgPool, prefix: &str, limit: i64) -> Result<Vec<String>> {
+    // Use ILIKE for case-insensitive prefix matching
+    // The idx_cards_name GIN index can be used for prefix searches in PostgreSQL
+    let pattern = format!("{}%", prefix);
+    
+    let names: Vec<(String,)> = sqlx::query_as(
+        r#"
+        SELECT DISTINCT name
+        FROM cards
+        WHERE name ILIKE $1
+        ORDER BY name
+        LIMIT $2
+        "#
+    )
+    .bind(&pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .context("Failed to autocomplete card names")?;
+
+    Ok(names.into_iter().map(|(name,)| name).collect())
+}
+
 /// Store query cache entry
 pub async fn store_query_cache(
     pool: &PgPool,

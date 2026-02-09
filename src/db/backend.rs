@@ -20,6 +20,10 @@ pub trait DatabaseBackend: Send + Sync {
     /// Search cards by name (fuzzy search)
     async fn search_cards_by_name(&self, name: &str, limit: i64) -> Result<Vec<Card>>;
 
+    /// Autocomplete card names by prefix (case-insensitive)
+    /// Returns up to `limit` card names that start with the given prefix, sorted alphabetically
+    async fn autocomplete_card_names(&self, prefix: &str, limit: i64) -> Result<Vec<String>>;
+
     /// Store a query result in the cache
     async fn store_query_cache(
         &self,

@@ -88,6 +88,13 @@ pub struct NamedParams {
     pub exact: Option<String>,
 }
 
+/// Autocomplete query parameters
+#[derive(Debug, Deserialize, utoipa::ToSchema, utoipa::IntoParams)]
+pub struct AutocompleteParams {
+    /// Card name prefix to search for (e.g., "light" matches "Lightning Bolt")
+    pub q: String,
+}
+
 // Concrete response types for OpenAPI generation
 /// Card response
 #[derive(Debug, Serialize, ToSchema)]
@@ -148,6 +155,15 @@ pub struct ReloadResponse {
     pub data: Option<String>,
     /// Error message (present if success is false)
     pub error: Option<String>,
+}
+
+/// Autocomplete response (Scryfall catalog format)
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AutocompleteResponse {
+    /// Object type (always "catalog")
+    pub object: String,
+    /// Array of card name suggestions
+    pub data: Vec<String>,
 }
 
 /// Health check endpoint
@@ -369,6 +385,61 @@ pub async fn admin_reload(State(state): State<AppState>) -> impl IntoResponse {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ApiResponse::<String>::error(e.to_string())),
+            )
+        }
+    }
+}
+
+/// Autocomplete card names
+#[utoipa::path(
+    get,
+    path = "/cards/autocomplete",
+    tag = "cards",
+    params(AutocompleteParams),
+    responses(
+        (status = 200, description = "Autocomplete suggestions", body = AutocompleteResponse),
+        (status = 400, description = "Bad request - query parameter required", body = AutocompleteResponse),
+        (status = 500, description = "Internal server error", body = AutocompleteResponse)
+    )
+)]
+pub async fn autocomplete_cards(
+    State(state): State<AppState>,
+    Query(params): Query<AutocompleteParams>,
+) -> impl IntoResponse {
+    let prefix = params.q.trim();
+    
+    // Return empty results for very short queries
+    if prefix.len() < 2 {
+        return (
+            StatusCode::OK,
+            Json(AutocompleteResponse {
+                object: "catalog".to_string(),
+                data: Vec::new(),
+            }),
+        );
+    }
+
+    info!("Autocomplete request: prefix='{}'", prefix);
+
+    match state.cache_manager.autocomplete(prefix).await {
+        Ok(names) => {
+            info!("Autocomplete returned {} names for prefix '{}'", names.len(), prefix);
+            (
+                StatusCode::OK,
+                Json(AutocompleteResponse {
+                    object: "catalog".to_string(),
+                    data: names,
+                }),
+            )
+        }
+        Err(e) => {
+            error!("Autocomplete failed: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(AutocompleteResponse {
+                    object: "catalog".to_string(),
+                    data: Vec::new(),
+                }),
             )
         }
     }

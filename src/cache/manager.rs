@@ -229,6 +229,23 @@ impl CacheManager {
         Ok(None)
     }
 
+    /// Autocomplete card names by prefix (case-insensitive)
+    /// Returns up to 20 card names that start with the given prefix
+    pub async fn autocomplete(&self, prefix: &str) -> Result<Vec<String>> {
+        debug!("Autocomplete request: prefix='{}'", prefix);
+        
+        if prefix.len() < 2 {
+            // Don't autocomplete for very short queries to avoid returning too many results
+            return Ok(Vec::new());
+        }
+
+        // Query the database for matching card names
+        let names = self.db.autocomplete_card_names(prefix, 20).await?;
+        
+        info!("Autocomplete returned {} names for prefix '{}'", names.len(), prefix);
+        Ok(names)
+    }
+
     /// Get cache statistics
     pub async fn get_stats(&self) -> Result<CacheStats> {
         let total_cards = self.db.get_card_count().await?;

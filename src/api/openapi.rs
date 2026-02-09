@@ -1,8 +1,8 @@
 use utoipa::OpenApi;
 
 use crate::api::handlers::{
-    CardListResponse, CardResponse, NamedParams, PaginatedCardData, ReloadResponse, SearchParams,
-    StatsResponse,
+    AutocompleteParams, AutocompleteResponse, CardListResponse, CardResponse, NamedParams,
+    PaginatedCardData, ReloadResponse, SearchParams, StatsResponse,
 };
 use crate::cache::manager::CacheStats;
 use crate::models::card::Card;
@@ -21,6 +21,7 @@ use crate::models::card::Card;
         crate::api::handlers::health,
         crate::api::handlers::search_cards,
         crate::api::handlers::get_card_by_name,
+        crate::api::handlers::autocomplete_cards,
         crate::api::handlers::get_card,
         crate::api::handlers::get_stats,
         crate::api::handlers::admin_reload,
@@ -33,9 +34,11 @@ use crate::models::card::Card;
             PaginatedCardData,
             StatsResponse,
             ReloadResponse,
+            AutocompleteResponse,
             CacheStats,
             SearchParams,
             NamedParams,
+            AutocompleteParams,
         )
     ),
     tags(

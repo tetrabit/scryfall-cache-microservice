@@ -41,6 +41,10 @@ impl DatabaseBackend for PostgresBackend {
         queries::search_cards_by_name(&self.pool, name, limit).await
     }
 
+    async fn autocomplete_card_names(&self, prefix: &str, limit: i64) -> Result<Vec<String>> {
+        queries::autocomplete_card_names(&self.pool, prefix, limit).await
+    }
+
     async fn store_query_cache(
         &self,
         query_hash: &str,

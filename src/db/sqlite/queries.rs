@@ -154,6 +154,26 @@ pub fn search_cards_by_name(pool: &SqlitePool, name: &str, limit: i64) -> Result
     Ok(cards)
 }
 
+/// Autocomplete card names by prefix (case-insensitive)
+/// Returns distinct card names that start with the given prefix, sorted alphabetically
+pub fn autocomplete_card_names(pool: &SqlitePool, prefix: &str, limit: i64) -> Result<Vec<String>> {
+    let conn = pool.get().context("Failed to get connection from pool")?;
+    let search_pattern = format!("{}%", prefix);
+    
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT name FROM cards WHERE name LIKE ?1 COLLATE NOCASE ORDER BY name LIMIT ?2"
+    ).context("Failed to prepare statement")?;
+    
+    let names = stmt.query_map(params![search_pattern, limit], |row| {
+        row.get::<_, String>(0)
+    })
+        .context("Failed to query card names")?
+        .collect::<Result<Vec<_>, _>>()
+        .context("Failed to map rows to names")?;
+
+    Ok(names)
+}
+
 /// Store a query result in the cache
 pub fn store_query_cache(
     pool: &SqlitePool,

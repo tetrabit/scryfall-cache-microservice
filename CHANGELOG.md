@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Autocomplete Endpoint** (`GET /cards/autocomplete?q=<prefix>`) - Fast card name suggestions
+  - Case-insensitive prefix matching on card names
+  - Returns up to 20 suggestions in Scryfall catalog format
+  - Optimized with database indexes for <100ms response time
+  - Supports search-as-you-type interfaces with 2+ character minimum
+  - Available in both PostgreSQL and SQLite backends
+  - Documentation: README updated with examples and usage
+  - Test script: `scripts/test-autocomplete.sh`
 - **Phase 2: Database Index Optimization** - Additional composite indexes for 2-3x query speedup
   - PostgreSQL: Composite GIN indexes for color+type and CMC+color query patterns
   - SQLite: Comprehensive B-tree indexes for colors, CMC, type_line, and set queries
