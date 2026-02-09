@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase 2: Database Index Optimization** - Additional composite indexes for 2-3x query speedup
+  - PostgreSQL: Composite GIN indexes for color+type and CMC+color query patterns
+  - SQLite: Comprehensive B-tree indexes for colors, CMC, type_line, and set queries
+  - Benchmark script for validating index performance (`scripts/benchmark-indexes.sh`)
+  - Documentation: `PHASE_2_INDEXES.md` with implementation guide and verification steps
+- Migration 003_add_performance_indexes.sql for PostgreSQL
+- Expected performance: <1s for broad queries (c:red), <500ms for medium queries (c:red t:creature)
+- Database size increase: ~15-20% (acceptable trade-off for performance gains)
+
 ### Planned
 - Authentication system with API keys
 - Prometheus metrics endpoint
