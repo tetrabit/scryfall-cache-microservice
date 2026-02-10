@@ -5,6 +5,7 @@ use tracing::{debug, info, warn};
 
 use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError};
 use crate::config::ScryfallConfig;
+use crate::metrics::registry::{SCRYFALL_API_CALLS_TOTAL, SCRYFALL_API_ERRORS_TOTAL};
 use crate::models::card::Card;
 use crate::scryfall::rate_limiter::RateLimiter;
 
@@ -58,7 +59,9 @@ impl ScryfallClient {
     }
 
     /// Make an HTTP request through the circuit breaker
-    async fn make_request(&self, url: String) -> Result<reqwest::Response> {
+    async fn make_request(&self, endpoint: &'static str, url: String) -> Result<reqwest::Response> {
+        SCRYFALL_API_CALLS_TOTAL.with_label_values(&[endpoint]).inc();
+
         // Wait for rate limit first
         self.rate_limiter.acquire().await;
 
@@ -99,10 +102,13 @@ impl ScryfallClient {
 
         while let Some(url) = next_page {
             // Make request through circuit breaker
-            let response = self.make_request(url.clone()).await?;
+            let response = self.make_request("cards_search", url.clone()).await?;
 
             if !response.status().is_success() {
                 let status = response.status();
+                SCRYFALL_API_ERRORS_TOTAL
+                    .with_label_values(&[&status.as_u16().to_string()])
+                    .inc();
                 let error_text = response.text().await.unwrap_or_default();
                 return Err(anyhow::anyhow!(
                     "Scryfall API error: {} - {}",
@@ -154,7 +160,7 @@ impl ScryfallClient {
             urlencoding::encode(name)
         );
 
-        let response = self.make_request(url).await?;
+        let response = self.make_request("cards_named", url).await?;
 
         if response.status() == 404 {
             return Ok(None);
@@ -162,6 +168,9 @@ impl ScryfallClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            SCRYFALL_API_ERRORS_TOTAL
+                .with_label_values(&[&status.as_u16().to_string()])
+                .inc();
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!(
                 "Scryfall API error: {} - {}",
@@ -187,7 +196,7 @@ impl ScryfallClient {
 
         let url = format!("{}/cards/{}", SCRYFALL_API_BASE, id);
 
-        let response = self.make_request(url).await?;
+        let response = self.make_request("cards_id", url).await?;
 
         if response.status() == 404 {
             return Ok(None);
@@ -195,6 +204,9 @@ impl ScryfallClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            SCRYFALL_API_ERRORS_TOTAL
+                .with_label_values(&[&status.as_u16().to_string()])
+                .inc();
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!(
                 "Scryfall API error: {} - {}",

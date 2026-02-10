@@ -8,6 +8,8 @@ use std::sync::Arc;
 use tokio::time::sleep;
 use tracing::debug;
 
+use crate::metrics::registry::SCRYFALL_RATE_LIMIT_WAITS_TOTAL;
+
 /// Rate limiter for Scryfall API requests
 #[derive(Clone)]
 pub struct RateLimiter {
@@ -41,6 +43,9 @@ impl RateLimiter {
                 Err(not_until) => {
                     let wait_time = not_until.wait_time_from(DefaultClock::default().now());
                     debug!("Rate limit exceeded, waiting {:?}", wait_time);
+                    SCRYFALL_RATE_LIMIT_WAITS_TOTAL
+                        .with_label_values(&[])
+                        .inc();
                     sleep(wait_time).await;
                 }
             }

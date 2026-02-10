@@ -3,6 +3,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::db::Database;
+use crate::metrics::registry::{CACHE_HITS_TOTAL, CACHE_MISSES_TOTAL};
 use crate::models::card::Card;
 use crate::query::executor::QueryExecutor;
 use crate::scryfall::client::ScryfallClient;
@@ -45,6 +46,7 @@ impl CacheManager {
             // Try to fetch cards from cache, but fall back to direct query if it fails
             match self.db.get_cards_by_ids(&card_ids).await {
                 Ok(cards) if !cards.is_empty() => {
+                    CACHE_HITS_TOTAL.with_label_values(&["query_cache"]).inc();
                     info!(
                         "Returned {} cards from cache for query: {}",
                         cards.len(),
@@ -58,6 +60,11 @@ impl CacheManager {
                 }
                 _ => {}
             }
+
+            // Query cache entry existed but wasn't usable.
+            CACHE_MISSES_TOTAL.with_label_values(&["query_cache"]).inc();
+        } else {
+            CACHE_MISSES_TOTAL.with_label_values(&["query_cache"]).inc();
         }
 
         debug!("Cache miss for query: {}", query);
@@ -65,6 +72,7 @@ impl CacheManager {
         // Try to execute query locally first
         match self.query_executor.execute(query, limit).await {
             Ok(cards) if !cards.is_empty() => {
+                CACHE_HITS_TOTAL.with_label_values(&["database"]).inc();
                 info!(
                     "Returned {} cards from local database for query: {}",
                     cards.len(),
@@ -81,6 +89,7 @@ impl CacheManager {
                 Ok(cards)
             }
             Ok(cards) => {
+                CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
                 // Query succeeded but returned no results
                 debug!(
                     "Query executor returned {} cards for query: {}",
@@ -91,6 +100,7 @@ impl CacheManager {
                 let cards = self.scryfall_client.search_cards(query).await?;
 
                 if !cards.is_empty() {
+                    CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
                     // Store cards in database
                     self.db.insert_cards_batch(&cards).await?;
 
@@ -106,17 +116,21 @@ impl CacheManager {
                         cards.len(),
                         query
                     );
+                } else {
+                    CACHE_MISSES_TOTAL.with_label_values(&["api"]).inc();
                 }
 
                 Ok(cards)
             }
             Err(e) => {
+                CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
                 // Query executor failed with an error
                 debug!("Query executor error for query '{}': {}", query, e);
                 info!("Querying Scryfall API for: {}", query);
                 let cards = self.scryfall_client.search_cards(query).await?;
 
                 if !cards.is_empty() {
+                    CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
                     // Store cards in database
                     self.db.insert_cards_batch(&cards).await?;
 
@@ -132,6 +146,8 @@ impl CacheManager {
                         cards.len(),
                         query
                     );
+                } else {
+                    CACHE_MISSES_TOTAL.with_label_values(&["api"]).inc();
                 }
 
                 Ok(cards)
@@ -162,6 +178,7 @@ impl CacheManager {
         {
             Ok((cards, total)) => {
                 if !cards.is_empty() || total > 0 {
+                    CACHE_HITS_TOTAL.with_label_values(&["database"]).inc();
                     info!(
                         "Returned {} cards from local database for query: {} (page {}/{})",
                         cards.len(),
@@ -171,12 +188,14 @@ impl CacheManager {
                     );
                     Ok((cards, total))
                 } else {
+                    CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
                     // Query returned no results - fall back to Scryfall API
                     debug!("Local query returned no results, querying Scryfall API");
                     info!("Querying Scryfall API for: {}", query);
                     let cards = self.scryfall_client.search_cards(query).await?;
 
                     if !cards.is_empty() {
+                        CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
                         // Store cards in database
                         self.db.insert_cards_batch(&cards).await?;
                         info!(
@@ -184,6 +203,8 @@ impl CacheManager {
                             cards.len(),
                             query
                         );
+                    } else {
+                        CACHE_MISSES_TOTAL.with_label_values(&["api"]).inc();
                     }
 
                     // For Scryfall API fallback, apply pagination in-memory
@@ -202,12 +223,14 @@ impl CacheManager {
                 }
             }
             Err(e) => {
+                CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
                 // Query executor failed - fall back to Scryfall API
                 debug!("Query executor error: {}", e);
                 info!("Querying Scryfall API for: {}", query);
                 let cards = self.scryfall_client.search_cards(query).await?;
 
                 if !cards.is_empty() {
+                    CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
                     // Store cards in database
                     self.db.insert_cards_batch(&cards).await?;
                     info!(
@@ -215,6 +238,8 @@ impl CacheManager {
                         cards.len(),
                         query
                     );
+                } else {
+                    CACHE_MISSES_TOTAL.with_label_values(&["api"]).inc();
                 }
 
                 // Apply pagination in-memory
@@ -239,19 +264,24 @@ impl CacheManager {
 
         // Check local database first
         if let Ok(Some(card)) = self.db.get_card_by_id(id).await {
+            CACHE_HITS_TOTAL.with_label_values(&["database"]).inc();
             debug!("Found card in local database: {}", card.name);
             return Ok(Some(card));
         }
 
+        CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
+
         // Fall back to Scryfall API
         debug!("Card not in database, querying Scryfall API");
         if let Some(card) = self.scryfall_client.get_card_by_id(id).await? {
+            CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
             // Store in database
             self.db.insert_cards_batch(&[card.clone()]).await?;
             info!("Fetched and cached card from Scryfall: {}", card.name);
             return Ok(Some(card));
         }
 
+        CACHE_MISSES_TOTAL.with_label_values(&["api"]).inc();
         Ok(None)
     }
 
@@ -262,19 +292,24 @@ impl CacheManager {
         // Try local database first
         let cards = self.db.search_cards_by_name(name, 1).await?;
         if let Some(card) = cards.first() {
+            CACHE_HITS_TOTAL.with_label_values(&["database"]).inc();
             debug!("Found card in local database: {}", card.name);
             return Ok(Some(card.clone()));
         }
 
+        CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
+
         // Fall back to Scryfall API
         debug!("Card not in database, querying Scryfall API");
         if let Some(card) = self.scryfall_client.get_card_by_name(name, fuzzy).await? {
+            CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
             // Store in database
             self.db.insert_cards_batch(&[card.clone()]).await?;
             info!("Fetched and cached card from Scryfall: {}", card.name);
             return Ok(Some(card));
         }
 
+        CACHE_MISSES_TOTAL.with_label_values(&["api"]).inc();
         Ok(None)
     }
 

@@ -1,4 +1,5 @@
 pub mod backend;
+mod instrumented;
 pub mod schema;
 
 #[cfg(feature = "postgres")]
@@ -17,6 +18,7 @@ pub use postgres::PostgresBackend;
 pub use sqlite::SqliteBackend;
 
 pub use backend::DatabaseBackend;
+use instrumented::InstrumentedDatabase;
 
 /// Database connection type - polymorphic over backends
 pub type Database = Arc<dyn DatabaseBackend>;
@@ -28,7 +30,8 @@ pub async fn init_database(config: &crate::config::DatabaseConfig) -> Result<Dat
     let pool = postgres::connection::create_pool(config).await?;
     postgres::connection::test_connection(&pool).await?;
     let backend = PostgresBackend::new(pool);
-    Ok(Arc::new(backend) as Database)
+    let base: Database = Arc::new(backend) as Database;
+    Ok(Arc::new(InstrumentedDatabase::new(base)) as Database)
 }
 
 #[cfg(feature = "sqlite")]
@@ -39,5 +42,6 @@ pub async fn init_database(config: &crate::config::DatabaseConfig) -> Result<Dat
 
     let pool = sqlite::connection::create_pool(&database_path)?;
     let backend = SqliteBackend::new(pool)?;
-    Ok(Arc::new(backend) as Database)
+    let base: Database = Arc::new(backend) as Database;
+    Ok(Arc::new(InstrumentedDatabase::new(base)) as Database)
 }
