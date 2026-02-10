@@ -3,22 +3,24 @@ use axum::{
     http::{Request, StatusCode},
 };
 use serde_json::{json, Value};
-use tower::ServiceExt;
+use tower::Service;
 
 // Helper to create test app
 async fn create_test_app() -> axum::Router {
-    use scryfall_cache::{api, cache, config, db, scryfall};
+    use scryfall_cache::{api, cache, config, db, query, scryfall};
     use std::sync::Arc;
 
-    dotenvy::dotenv().ok();
-    let config = config::Config::from_env();
+    let config = config::Config::from_env()
+        .expect("Failed to load configuration from environment");
     
-    let db_pool = db::connect(&config.database).await
+    let db_pool = db::init_database(&config.database)
+        .await
         .expect("Failed to connect to database");
     
-    let cache_manager = cache::manager::CacheManager::new(db_pool.clone());
-    let bulk_loader = scryfall::bulk_loader::BulkLoader::new(db_pool.clone());
-    let query_validator = scryfall_cache::query::QueryValidator::from_env();
+    let scryfall_client = scryfall::client::ScryfallClient::new(&config.scryfall);
+    let cache_manager = cache::manager::CacheManager::new(db_pool.clone(), scryfall_client);
+    let bulk_loader = scryfall::bulk_loader::BulkLoader::new(db_pool.clone(), config.scryfall.clone());
+    let query_validator = scryfall_cache::query::QueryValidator::new(query::QueryLimits::from_env());
     
     let state = Arc::new(api::handlers::AppStateInner {
         cache_manager,
@@ -41,7 +43,7 @@ async fn send_json_request(
         .body(Body::empty())
         .unwrap();
     
-    let response = app.oneshot(request).await.unwrap();
+    let response = app.call(request).await.unwrap();
     let status = response.status();
     
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -179,7 +181,7 @@ async fn test_autocomplete() {
 #[tokio::test]
 async fn test_cache_stats() {
     let mut app = create_test_app().await;
-    let (status, body) = send_json_request(&mut app, "GET", "/cache/stats").await;
+    let (status, body) = send_json_request(&mut app, "GET", "/stats").await;
     
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["success"], true);
@@ -197,7 +199,7 @@ async fn test_metrics_endpoint() {
         .body(Body::empty())
         .unwrap();
     
-    let response = app.oneshot(request).await.unwrap();
+    let response = app.call(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)

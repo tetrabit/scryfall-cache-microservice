@@ -4,6 +4,7 @@ use axum::{
     Router,
 };
 use tower_http::{
+    compression::CompressionLayer,
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
@@ -41,7 +42,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/admin/reload", post(admin_reload))
         // OpenAPI documentation
         .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Add middleware (order matters: logging -> metrics -> cors -> trace)
+        // Add middleware (order matters: compression -> logging -> metrics -> cors -> trace)
+        .layer(CompressionLayer::new())
         .layer(middleware::from_fn(logging_middleware))
         .layer(middleware::from_fn(metrics::middleware::track_metrics))
         .layer(cors)
