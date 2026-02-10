@@ -2,6 +2,7 @@ mod api;
 mod cache;
 mod config;
 mod db;
+mod errors;
 mod metrics;
 mod models;
 mod query;

@@ -10,6 +10,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::cache::manager::{CacheManager, CacheStats};
+use crate::errors::ErrorResponse;
 use crate::models::card::Card;
 use crate::scryfall::bulk_loader::BulkLoader;
 
@@ -223,14 +224,11 @@ pub async fn search_cards(
                 has_more,
             };
 
-            (StatusCode::OK, Json(ApiResponse::success(response)))
+            (StatusCode::OK, Json(ApiResponse::success(response))).into_response()
         }
         Err(e) => {
             error!("Search failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<PaginatedResponse<Card>>::error(e.to_string())),
-            )
+            ErrorResponse::invalid_query(format!("Search failed: {}", e)).into_response()
         }
     }
 }
@@ -258,21 +256,15 @@ pub async fn get_card(
     match state.cache_manager.get_card(id).await {
         Ok(Some(card)) => {
             info!("Found card: {}", card.name);
-            (StatusCode::OK, Json(ApiResponse::success(card)))
+            (StatusCode::OK, Json(ApiResponse::success(card))).into_response()
         }
         Ok(None) => {
             info!("Card not found: {}", id);
-            (
-                StatusCode::NOT_FOUND,
-                Json(ApiResponse::<Card>::error("Card not found".to_string())),
-            )
+            ErrorResponse::card_not_found(id.to_string()).into_response()
         }
         Err(e) => {
             error!("Get card failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<Card>::error(e.to_string())),
-            )
+            ErrorResponse::database_error(format!("Failed to fetch card: {}", e)).into_response()
         }
     }
 }
@@ -299,12 +291,9 @@ pub async fn get_card_by_name(
     } else if let Some(name) = params.exact {
         (name, false)
     } else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<Card>::error(
-                "Must provide either 'fuzzy' or 'exact' parameter".to_string(),
-            )),
-        );
+        return ErrorResponse::validation_error(
+            "Must provide either 'fuzzy' or 'exact' parameter"
+        ).into_response();
     };
 
     info!("Get card by name: name='{}', fuzzy={}", name, fuzzy);
@@ -312,21 +301,15 @@ pub async fn get_card_by_name(
     match state.cache_manager.search_by_name(&name, fuzzy).await {
         Ok(Some(card)) => {
             info!("Found card: {}", card.name);
-            (StatusCode::OK, Json(ApiResponse::success(card)))
+            (StatusCode::OK, Json(ApiResponse::success(card))).into_response()
         }
         Ok(None) => {
             info!("Card not found: {}", name);
-            (
-                StatusCode::NOT_FOUND,
-                Json(ApiResponse::<Card>::error("Card not found".to_string())),
-            )
+            ErrorResponse::card_not_found(name).into_response()
         }
         Err(e) => {
             error!("Get card by name failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<Card>::error(e.to_string())),
-            )
+            ErrorResponse::database_error(format!("Failed to search by name: {}", e)).into_response()
         }
     }
 }
@@ -347,14 +330,11 @@ pub async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
     match state.cache_manager.get_stats().await {
         Ok(stats) => {
             info!("Stats: {:?}", stats);
-            (StatusCode::OK, Json(ApiResponse::success(stats)))
+            (StatusCode::OK, Json(ApiResponse::success(stats))).into_response()
         }
         Err(e) => {
             error!("Get stats failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<CacheStats>::error(e.to_string())),
-            )
+            ErrorResponse::database_error(format!("Failed to retrieve stats: {}", e)).into_response()
         }
     }
 }
@@ -379,13 +359,11 @@ pub async fn admin_reload(State(state): State<AppState>) -> impl IntoResponse {
                 StatusCode::OK,
                 Json(ApiResponse::success("Bulk data reload completed".to_string())),
             )
+                .into_response()
         }
         Err(e) => {
             error!("Bulk data reload failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiResponse::<String>::error(e.to_string())),
-            )
+            ErrorResponse::internal_error(format!("Bulk data reload failed: {}", e)).into_response()
         }
     }
 }
@@ -416,7 +394,8 @@ pub async fn autocomplete_cards(
                 object: "catalog".to_string(),
                 data: Vec::new(),
             }),
-        );
+        )
+            .into_response();
     }
 
     info!("Autocomplete request: prefix='{}'", prefix);
@@ -431,16 +410,11 @@ pub async fn autocomplete_cards(
                     data: names,
                 }),
             )
+                .into_response()
         }
         Err(e) => {
             error!("Autocomplete failed: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(AutocompleteResponse {
-                    object: "catalog".to_string(),
-                    data: Vec::new(),
-                }),
-            )
+            ErrorResponse::database_error(format!("Autocomplete failed: {}", e)).into_response()
         }
     }
 }
