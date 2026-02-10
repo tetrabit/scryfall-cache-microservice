@@ -1,6 +1,7 @@
 mod api;
 mod background;
 mod cache;
+mod circuit_breaker;
 mod config;
 mod db;
 mod errors;
