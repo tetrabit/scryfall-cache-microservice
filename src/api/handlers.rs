@@ -239,7 +239,14 @@ pub async fn search_cards(
         }
         Err(e) => {
             error!("Search failed: {}", e);
-            ErrorResponse::invalid_query(format!("Search failed: {}", e)).into_response()
+            
+            // Map error type to appropriate error code
+            let error_message = e.to_string();
+            if error_message.contains("database") || error_message.contains("connection") || error_message.contains("pool") {
+                ErrorResponse::database_error(format!("Database error during search: {}", e)).into_response()
+            } else {
+                ErrorResponse::invalid_query(format!("Search failed: {}", e)).into_response()
+            }
         }
     }
 }
@@ -320,7 +327,16 @@ pub async fn get_card_by_name(
         }
         Err(e) => {
             error!("Get card by name failed: {}", e);
-            ErrorResponse::database_error(format!("Failed to search by name: {}", e)).into_response()
+            
+            // Map error type to appropriate error code
+            let error_message = e.to_string();
+            if error_message.contains("database") || error_message.contains("connection") || error_message.contains("pool") {
+                ErrorResponse::database_error(format!("Database error: {}", e)).into_response()
+            } else if error_message.contains("scryfall") || error_message.contains("API") || error_message.contains("rate limit") {
+                ErrorResponse::new(crate::errors::codes::ErrorCode::ScryfallApiError, format!("Scryfall API error: {}", e)).into_response()
+            } else {
+                ErrorResponse::internal_error(format!("Failed to search by name: {}", e)).into_response()
+            }
         }
     }
 }
@@ -374,7 +390,16 @@ pub async fn admin_reload(State(state): State<AppState>) -> impl IntoResponse {
         }
         Err(e) => {
             error!("Bulk data reload failed: {}", e);
-            ErrorResponse::internal_error(format!("Bulk data reload failed: {}", e)).into_response()
+            
+            // Map error type to appropriate error code
+            let error_message = e.to_string();
+            if error_message.contains("scryfall") || error_message.contains("download") || error_message.contains("HTTP") {
+                ErrorResponse::new(crate::errors::codes::ErrorCode::ScryfallApiError, format!("Failed to download bulk data: {}", e)).into_response()
+            } else if error_message.contains("database") || error_message.contains("connection") {
+                ErrorResponse::database_error(format!("Failed to load bulk data into database: {}", e)).into_response()
+            } else {
+                ErrorResponse::internal_error(format!("Bulk data reload failed: {}", e)).into_response()
+            }
         }
     }
 }
