@@ -56,6 +56,32 @@ async fn send_json_request(app: &mut axum::Router, method: &str, uri: &str) -> (
     (status, json)
 }
 
+// Helper to send JSON request with JSON body
+async fn send_json_body_request(
+    app: &mut axum::Router,
+    method: &str,
+    uri: &str,
+    body: Value,
+) -> (StatusCode, Value) {
+    let bytes = serde_json::to_vec(&body).unwrap();
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(bytes))
+        .unwrap();
+
+    let response = app.call(request).await.unwrap();
+    let status = response.status();
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+
+    (status, json)
+}
+
 #[tokio::test]
 async fn test_health_endpoint() {
     let mut app = create_test_app().await;
@@ -133,6 +159,37 @@ async fn test_search_cards_pagination() {
     assert_eq!(body["data"]["page"], 1);
     assert_eq!(body["data"]["page_size"], 10);
     assert!(body["data"]["total"].is_number());
+}
+
+#[tokio::test]
+async fn test_batch_get_cards() {
+    let mut app = create_test_app().await;
+
+    // Find one card ID via search.
+    let (status, search_body) = send_json_request(&mut app, "GET", "/cards/search?q=sol+ring").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let first_id = search_body["data"]["data"]
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|c| c["id"].as_str())
+        .expect("expected at least one search result with an id");
+
+    let (status, body) = send_json_body_request(
+        &mut app,
+        "POST",
+        "/cards/batch",
+        json!({
+            "ids": [first_id],
+            "fetch_missing": false
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert!(body["data"]["cards"].is_array());
+    assert_eq!(body["data"]["cards"][0]["id"], first_id);
 }
 
 #[tokio::test]

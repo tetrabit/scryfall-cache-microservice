@@ -18,6 +18,11 @@ struct SearchResponse {
     next_page: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CollectionResponse {
+    data: Vec<serde_json::Value>,
+}
+
 /// Rate-limited Scryfall API client with circuit breaker
 #[derive(Clone)]
 pub struct ScryfallClient {
@@ -72,6 +77,43 @@ impl ScryfallClient {
             .call(async move {
                 client
                     .get(&url)
+                    .send()
+                    .await
+                    .context("Failed to send request to Scryfall")
+            })
+            .await
+        {
+            Ok(response) => Ok(response),
+            Err(CircuitBreakerError::Open) => {
+                warn!("Circuit breaker open, request rejected");
+                Err(anyhow::anyhow!(
+                    "Circuit breaker is open - Scryfall API unavailable"
+                ))
+            }
+            Err(CircuitBreakerError::Inner(e)) => Err(e),
+        }
+    }
+
+    /// Make a POST JSON request through the circuit breaker
+    async fn make_post_json(
+        &self,
+        endpoint: &'static str,
+        url: String,
+        body: serde_json::Value,
+    ) -> Result<reqwest::Response> {
+        SCRYFALL_API_CALLS_TOTAL.with_label_values(&[endpoint]).inc();
+
+        // Wait for rate limit first
+        self.rate_limiter.acquire().await;
+
+        // Execute through circuit breaker
+        let client = self.http_client.clone();
+        match self
+            .circuit_breaker
+            .call(async move {
+                client
+                    .post(&url)
+                    .json(&body)
                     .send()
                     .await
                     .context("Failed to send request to Scryfall")
@@ -224,6 +266,57 @@ impl ScryfallClient {
             Card::from_scryfall_json(card_json).context("Failed to convert Scryfall card")?;
 
         Ok(Some(card))
+    }
+
+    /// Fetch multiple cards by ID using Scryfall's collection endpoint (chunked).
+    /// This avoids N per-card GETs and is typically much faster.
+    pub async fn get_cards_by_ids_collection(&self, ids: &[uuid::Uuid]) -> Result<Vec<Card>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut all_cards = Vec::new();
+
+        // Scryfall cards/collection supports up to 75 identifiers per request.
+        for chunk in ids.chunks(75) {
+            let identifiers: Vec<serde_json::Value> = chunk
+                .iter()
+                .map(|id| serde_json::json!({ "id": id.to_string() }))
+                .collect();
+
+            let url = format!("{}/cards/collection", SCRYFALL_API_BASE);
+            let body = serde_json::json!({ "identifiers": identifiers });
+
+            let response = self
+                .make_post_json("cards_collection", url, body)
+                .await?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                SCRYFALL_API_ERRORS_TOTAL
+                    .with_label_values(&[&status.as_u16().to_string()])
+                    .inc();
+                let error_text = response.text().await.unwrap_or_default();
+                return Err(anyhow::anyhow!(
+                    "Scryfall API error: {} - {}",
+                    status,
+                    error_text
+                ));
+            }
+
+            let collection: CollectionResponse = response
+                .json()
+                .await
+                .context("Failed to parse Scryfall collection response")?;
+
+            for card_json in collection.data {
+                if let Ok(card) = Card::from_scryfall_json(card_json) {
+                    all_cards.push(card);
+                }
+            }
+        }
+
+        Ok(all_cards)
     }
 }
 

@@ -342,6 +342,43 @@ Example:
 curl "http://localhost:8080/cards/550c74d4-1fcb-406a-b02a-639a760a4380"
 ```
 
+### Batch Get Cards by ID
+
+Fetch many cards in a single request (significantly faster than N sequential calls).
+
+```bash
+POST /cards/batch
+```
+
+Example:
+```bash
+curl -X POST "http://localhost:8080/cards/batch" \
+  -H "content-type: application/json" \
+  -d '{
+    "ids": [
+      "550c74d4-1fcb-406a-b02a-639a760a4380",
+      "00000000-0000-0000-0000-000000000000"
+    ],
+    "fetch_missing": false
+  }'
+```
+
+Response (example):
+```json
+{
+  "success": true,
+  "data": {
+    "cards": [
+      { "id": "550c74d4-1fcb-406a-b02a-639a760a4380", "name": "Lightning Bolt", "...": "..." }
+    ],
+    "missing_ids": ["00000000-0000-0000-0000-000000000000"]
+  },
+  "error": null
+}
+```
+
+Set `BATCH_MAX_IDS` to limit the maximum number of IDs accepted (default: 1000).
+
 ### Get Card by Name
 
 ```bash

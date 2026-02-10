@@ -176,6 +176,32 @@ pub struct ReloadResponse {
     pub error: Option<crate::errors::response::ErrorDetail>,
 }
 
+/// Batch card lookup request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BatchCardsRequest {
+    /// List of card UUIDs to fetch
+    pub ids: Vec<Uuid>,
+    /// If true, missing cards will be fetched from Scryfall (via /cards/collection) and cached
+    pub fetch_missing: Option<bool>,
+}
+
+/// Batch card lookup response payload
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchCardsData {
+    /// Cards found (in the same order as requested IDs; missing cards omitted)
+    pub cards: Vec<Card>,
+    /// IDs that could not be found (unique)
+    pub missing_ids: Vec<Uuid>,
+}
+
+/// Batch card list response
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchCardsResponse {
+    pub success: bool,
+    pub data: Option<BatchCardsData>,
+    pub error: Option<crate::errors::response::ErrorDetail>,
+}
+
 /// Autocomplete response (Scryfall catalog format)
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AutocompleteResponse {
@@ -431,6 +457,57 @@ pub async fn search_cards(
             } else {
                 ErrorResponse::internal_error(format!("Search failed: {}", e)).into_response()
             }
+        }
+    }
+}
+
+/// Batch fetch cards by ID
+#[utoipa::path(
+    post,
+    path = "/cards/batch",
+    tag = "cards",
+    request_body = BatchCardsRequest,
+    responses(
+        (status = 200, description = "Batch card lookup result", body = BatchCardsResponse),
+        (status = 400, description = "Bad request", body = BatchCardsResponse),
+        (status = 500, description = "Internal server error", body = BatchCardsResponse)
+    )
+)]
+pub async fn batch_get_cards(
+    State(state): State<AppState>,
+    Json(req): Json<BatchCardsRequest>,
+) -> impl IntoResponse {
+    let max_ids: usize = std::env::var("BATCH_MAX_IDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1000);
+
+    if req.ids.is_empty() {
+        return ErrorResponse::validation_error("ids must not be empty").into_response();
+    }
+    if req.ids.len() > max_ids {
+        return ErrorResponse::validation_error(format!(
+            "too many ids: {} (max {})",
+            req.ids.len(),
+            max_ids
+        ))
+        .into_response();
+    }
+
+    let fetch_missing = req.fetch_missing.unwrap_or(false);
+
+    match state
+        .cache_manager
+        .get_cards_batch(&req.ids, fetch_missing)
+        .await
+    {
+        Ok((cards, missing_ids)) => {
+            let data = BatchCardsData { cards, missing_ids };
+            (StatusCode::OK, Json(ApiResponse::success(data))).into_response()
+        }
+        Err(e) => {
+            error!("Batch get cards failed: {}", e);
+            ErrorResponse::internal_error(format!("Batch get cards failed: {}", e)).into_response()
         }
     }
 }

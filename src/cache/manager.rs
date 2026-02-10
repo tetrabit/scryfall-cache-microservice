@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashSet;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -332,6 +333,70 @@ impl CacheManager {
             prefix
         );
         Ok(names)
+    }
+
+    /// Fetch multiple cards by IDs in one call.
+    /// - Reads from the local DB first.
+    /// - Optionally fetches missing cards from Scryfall using /cards/collection (chunked) and stores them.
+    /// Returns (cards_in_request_order, missing_ids_unique).
+    pub async fn get_cards_batch(
+        &self,
+        ids: &[Uuid],
+        fetch_missing: bool,
+    ) -> Result<(Vec<Card>, Vec<Uuid>)> {
+        if ids.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+
+        let found_cards = self.db.get_cards_by_ids(ids).await?;
+        let mut by_id = std::collections::HashMap::with_capacity(found_cards.len());
+        for card in found_cards {
+            by_id.insert(card.id, card);
+        }
+
+        let mut missing_ids = Vec::new();
+        let mut seen_missing = HashSet::new();
+        for id in ids {
+            if !by_id.contains_key(id) && seen_missing.insert(*id) {
+                missing_ids.push(*id);
+            }
+        }
+
+        if missing_ids.is_empty() {
+            CACHE_HITS_TOTAL.with_label_values(&["database"]).inc();
+        } else {
+            CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
+        }
+
+        if fetch_missing && !missing_ids.is_empty() {
+            let fetched = self
+                .scryfall_client
+                .get_cards_by_ids_collection(&missing_ids)
+                .await?;
+
+            if !fetched.is_empty() {
+                CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
+                self.db.insert_cards_batch(&fetched).await?;
+                for card in fetched {
+                    by_id.insert(card.id, card);
+                }
+            } else {
+                CACHE_MISSES_TOTAL.with_label_values(&["api"]).inc();
+            }
+
+            // Recompute missing IDs after attempted fetch.
+            let mut still_missing = Vec::new();
+            let mut seen_still = HashSet::new();
+            for id in ids {
+                if !by_id.contains_key(id) && seen_still.insert(*id) {
+                    still_missing.push(*id);
+                }
+            }
+            missing_ids = still_missing;
+        }
+
+        let cards_in_order: Vec<Card> = ids.iter().filter_map(|id| by_id.get(id).cloned()).collect();
+        Ok((cards_in_order, missing_ids))
     }
 
     /// Get cache statistics
