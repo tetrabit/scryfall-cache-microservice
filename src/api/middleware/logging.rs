@@ -10,7 +10,6 @@ pub async fn logging_middleware(request: Request, next: Next) -> Response {
 
     // Extract request information
     let method = request.method().to_string();
-    let uri = request.uri().to_string();
     let path = request.uri().path().to_string();
     let query = request.uri().query().unwrap_or("").to_string();
     let user_agent = request
