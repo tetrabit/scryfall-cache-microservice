@@ -12,6 +12,7 @@ use uuid::Uuid;
 use crate::cache::manager::{CacheManager, CacheStats};
 use crate::errors::ErrorResponse;
 use crate::models::card::Card;
+use crate::query::{QueryLimits, QueryParser, QueryValidator};
 use crate::scryfall::bulk_loader::BulkLoader;
 
 pub type AppState = Arc<AppStateInner>;
@@ -19,6 +20,7 @@ pub type AppState = Arc<AppStateInner>;
 pub struct AppStateInner {
     pub cache_manager: CacheManager,
     pub bulk_loader: BulkLoader,
+    pub query_validator: QueryValidator,
 }
 
 /// Generic API response wrapper
@@ -201,6 +203,23 @@ pub async fn search_cards(
 ) -> impl IntoResponse {
     info!("Search request: query='{}', limit={:?}, page={:?}, page_size={:?}",
         params.q, params.limit, params.page, params.page_size);
+
+    // Validate query string
+    if let Err(e) = state.query_validator.validate_query_string(&params.q) {
+        return ErrorResponse::validation_error(e.to_string()).into_response();
+    }
+
+    // Parse and validate query AST
+    match QueryParser::parse(&params.q) {
+        Ok(ast) => {
+            if let Err(e) = state.query_validator.validate_ast(&ast) {
+                return ErrorResponse::validation_error(e.to_string()).into_response();
+            }
+        }
+        Err(e) => {
+            return ErrorResponse::invalid_query(format!("Query parse error: {}", e)).into_response();
+        }
+    }
 
     // Use pagination parameters
     let page = params.page.unwrap_or(1).max(1);

@@ -83,10 +83,14 @@ async fn main() -> Result<()> {
     // Initialize cache manager
     let cache_manager = CacheManager::new(db.clone(), scryfall_client);
 
+    // Initialize query validator
+    let query_validator = query::QueryValidator::new(query::QueryLimits::from_env());
+
     // Create application state
     let state = Arc::new(AppStateInner {
         cache_manager,
         bulk_loader,
+        query_validator,
     });
 
     // Create router
