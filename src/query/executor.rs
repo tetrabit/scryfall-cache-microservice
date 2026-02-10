@@ -344,9 +344,10 @@ mod tests {
         // which doesn't require a database connection
         let mock_db = std::sync::Arc::new(
             crate::db::postgres::PostgresBackend::new(
-                sqlx::PgPoolOptions::new()
+                sqlx::postgres::PgPoolOptions::new()
                     .max_connections(1)
                     .connect_lazy("postgresql://test@localhost/test")
+                    .expect("failed to create lazy pg pool for tests")
             )
         ) as crate::db::Database;
         

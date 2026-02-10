@@ -6,7 +6,13 @@ use sqlx::PgPool;
 use tracing::info;
 
 #[cfg(feature = "postgres")]
-const MIGRATION_SQL: &str = include_str!("../../migrations/001_initial_schema.sql");
+const MIGRATION_SQL: &str = concat!(
+    include_str!("../../migrations/001_initial_schema.sql"),
+    "\n",
+    include_str!("../../migrations/002_fix_cmc_type.sql"),
+    "\n",
+    include_str!("../../migrations/003_add_performance_indexes.sql"),
+);
 
 #[cfg(feature = "postgres")]
 pub async fn run_migrations(pool: &PgPool) -> Result<()> {
@@ -122,4 +128,39 @@ pub async fn get_last_bulk_import(pool: &PgPool) -> Result<Option<chrono::NaiveD
     .context("Failed to get last bulk import timestamp")?;
 
     Ok(result.map(|r| r.0))
+}
+
+#[cfg(all(test, feature = "postgres"))]
+mod tests {
+    use super::MIGRATION_SQL;
+
+    #[test]
+    fn migration_sql_includes_phase_2_indexes() {
+        let sql = MIGRATION_SQL;
+        assert!(
+            sql.contains("idx_cards_colors_type"),
+            "Missing composite colors/type index"
+        );
+        assert!(
+            sql.contains("idx_cards_cmc_colors"),
+            "Missing cmc/colors index"
+        );
+        assert!(
+            sql.contains("idx_cards_set_rarity"),
+            "Missing set/rarity index"
+        );
+        assert!(
+            sql.contains("idx_cards_set_collector"),
+            "Missing set/collector index"
+        );
+    }
+
+    #[test]
+    fn migration_sql_includes_cmc_type_fix() {
+        let sql = MIGRATION_SQL;
+        assert!(
+            sql.contains("ALTER TABLE cards ALTER COLUMN cmc TYPE DOUBLE PRECISION"),
+            "Missing CMC type fix migration"
+        );
+    }
 }

@@ -30,8 +30,8 @@ pub struct ApiResponse<T> {
     pub success: bool,
     /// Response data (present if success is true)
     pub data: Option<T>,
-    /// Error message (present if success is false)
-    pub error: Option<String>,
+    /// Error details (present if success is false)
+    pub error: Option<crate::errors::response::ErrorDetail>,
 }
 
 impl<T: Serialize> ApiResponse<T> {
@@ -40,14 +40,6 @@ impl<T: Serialize> ApiResponse<T> {
             success: true,
             data: Some(data),
             error: None,
-        }
-    }
-
-    pub fn error(message: String) -> Self {
-        Self {
-            success: false,
-            data: None,
-            error: Some(message),
         }
     }
 }
@@ -106,8 +98,8 @@ pub struct CardResponse {
     pub success: bool,
     /// Response data (present if success is true)
     pub data: Option<Card>,
-    /// Error message (present if success is false)
-    pub error: Option<String>,
+    /// Error details (present if success is false)
+    pub error: Option<crate::errors::response::ErrorDetail>,
 }
 
 /// Paginated card list response
@@ -117,8 +109,8 @@ pub struct CardListResponse {
     pub success: bool,
     /// Response data (present if success is true)
     pub data: Option<PaginatedCardData>,
-    /// Error message (present if success is false)
-    pub error: Option<String>,
+    /// Error details (present if success is false)
+    pub error: Option<crate::errors::response::ErrorDetail>,
 }
 
 /// Paginated card data
@@ -145,8 +137,8 @@ pub struct StatsResponse {
     pub success: bool,
     /// Response data (present if success is true)
     pub data: Option<CacheStats>,
-    /// Error message (present if success is false)
-    pub error: Option<String>,
+    /// Error details (present if success is false)
+    pub error: Option<crate::errors::response::ErrorDetail>,
 }
 
 /// Reload response
@@ -156,8 +148,8 @@ pub struct ReloadResponse {
     pub success: bool,
     /// Response data (present if success is true)
     pub data: Option<String>,
-    /// Error message (present if success is false)
-    pub error: Option<String>,
+    /// Error details (present if success is false)
+    pub error: Option<crate::errors::response::ErrorDetail>,
 }
 
 /// Autocomplete response (Scryfall catalog format)
