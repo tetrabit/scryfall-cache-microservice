@@ -12,6 +12,8 @@ By participating in this project, you agree to abide by our Code of Conduct:
 - Show empathy towards other community members
 - Be patient with questions and issues
 
+See `CODE_OF_CONDUCT.md` for the full text and enforcement details.
+
 ## How to Contribute
 
 ### Reporting Bugs
