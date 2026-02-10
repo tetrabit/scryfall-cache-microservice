@@ -68,9 +68,9 @@ impl QueryParser {
         let mut tokens = Vec::new();
         let mut current = String::new();
         let mut in_quotes = false;
-        let mut chars = query.chars().peekable();
+        let chars = query.chars().peekable();
 
-        while let Some(ch) = chars.next() {
+        for ch in chars {
             match ch {
                 '"' => {
                     in_quotes = !in_quotes;

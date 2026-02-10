@@ -50,11 +50,11 @@ pub async fn insert_cards_batch(pool: &PgPool, cards: &[Card]) -> Result<()> {
                 updated_at = NOW()
             "#,
         )
-        .bind(&card.id)
-        .bind(&card.oracle_id)
+        .bind(card.id)
+        .bind(card.oracle_id)
         .bind(&card.name)
         .bind(&card.mana_cost)
-        .bind(&card.cmc)
+        .bind(card.cmc)
         .bind(&card.type_line)
         .bind(&card.oracle_text)
         .bind(&card.colors)
@@ -71,7 +71,7 @@ pub async fn insert_cards_batch(pool: &PgPool, cards: &[Card]) -> Result<()> {
         .bind(&card.image_uris)
         .bind(&card.card_faces)
         .bind(&card.legalities)
-        .bind(&card.released_at)
+        .bind(card.released_at)
         .bind(&card.raw_json)
         .execute(&mut *transaction)
         .await

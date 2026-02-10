@@ -133,7 +133,7 @@ impl QueryExecutor {
             })?;
 
         debug!("Query returned {} cards (page {} of {})", 
-               cards.len(), page, (total + page_size - 1) / page_size);
+               cards.len(), page, total.div_ceil(page_size));
 
         Ok((cards, total))
     }

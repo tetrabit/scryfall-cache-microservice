@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::cache::manager::{CacheManager, CacheStats};
 use crate::errors::ErrorResponse;
 use crate::models::card::Card;
-use crate::query::{QueryLimits, QueryParser, QueryValidator};
+use crate::query::{QueryParser, QueryValidator};
 use crate::scryfall::bulk_loader::BulkLoader;
 
 lazy_static::lazy_static! {
@@ -236,7 +236,7 @@ pub async fn search_cards(
     // Use the new paginated search which is much faster
     match state.cache_manager.search_paginated(&params.q, page, page_size).await {
         Ok((cards, total)) => {
-            let total_pages = (total + page_size - 1) / page_size;
+            let total_pages = total.div_ceil(page_size);
             let has_more = page < total_pages;
 
             info!("Search returned {} cards (page {}/{}), {} total matches",

@@ -127,7 +127,7 @@ impl CacheManager {
             Ok((cards, total)) => {
                 if !cards.is_empty() || total > 0 {
                     info!("Returned {} cards from local database for query: {} (page {}/{})", 
-                          cards.len(), query, page, (total + page_size - 1) / page_size);
+                          cards.len(), query, page, total.div_ceil(page_size));
                     Ok((cards, total))
                 } else {
                     // Query returned no results - fall back to Scryfall API

@@ -67,7 +67,7 @@ async fn test_health_endpoint() {
 #[tokio::test]
 async fn test_search_cards_basic() {
     let mut app = create_test_app().await;
-    let (status, body) = send_json_request(&mut app, "GET", "/cards/search?q=c:red").await;
+    let (status, body) = send_json_request(&mut app, "GET", "/cards/search?q=c:r").await;
     
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["success"], true);
@@ -92,7 +92,7 @@ async fn test_search_cards_pagination() {
     let (status, body) = send_json_request(
         &mut app,
         "GET",
-        "/cards/search?q=c:blue&page=1&page_size=10"
+        "/cards/search?q=c:u&page=1&page_size=10"
     ).await;
     
     assert_eq!(status, StatusCode::OK);
@@ -131,7 +131,7 @@ async fn test_get_card_not_found() {
     
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["success"], false);
-    assert!(body["error"]["code"].as_str().unwrap().contains("NotFound"));
+    assert_eq!(body["error"]["code"], "CARD_NOT_FOUND");
 }
 
 #[tokio::test]
@@ -186,7 +186,7 @@ async fn test_cache_stats() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["success"], true);
     assert!(body["data"]["total_cards"].is_number());
-    assert!(body["data"]["database_size_mb"].is_number());
+    assert!(body["data"]["total_cache_entries"].is_number());
 }
 
 #[tokio::test]
