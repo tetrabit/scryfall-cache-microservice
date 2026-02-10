@@ -1,6 +1,7 @@
 use axum::{
     middleware,
     routing::{get, post},
+    Json,
     Router,
 };
 use tower_http::{
@@ -16,11 +17,6 @@ use super::handlers::{
     admin_reload, admin_stats_overview, autocomplete_cards, batch_execute_queries, batch_get_cards,
     batch_get_cards_by_name, get_card, get_card_by_name, get_stats, graphql_playground, health,
     health_live, health_ready, search_cards, AppState,
-};
-use axum::{
-    extract::State,
-    response::{IntoResponse, Response},
-    Json,
 };
 use async_graphql::{Request as GraphQLRequest, Response as GraphQLResponse};
 use super::middleware::logging_middleware;
@@ -42,11 +38,12 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/health/live", get(health_live))
         .route("/health/ready", get(health_ready))
-        // GraphQL endpoint (using async-graphql-axum integration)
+        // GraphQL endpoint
         .route(
             "/graphql",
-            get(graphql_query_handler).post(graphql_query_handler),
+            get(graphql_playground).post(graphql_query_handler),
         )
+        // Backward-compatible playground route
         .route("/graphql/playground", get(graphql_playground))
         // Add GraphQL schema as extension for the /graphql route
         .layer(axum::Extension(graphql_schema))
