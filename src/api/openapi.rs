@@ -2,7 +2,9 @@ use utoipa::OpenApi;
 
 use crate::api::handlers::{
     AdminOverview, AdminOverviewResponse, AutocompleteParams, AutocompleteResponse,
-    BatchCardsData, BatchCardsRequest, BatchCardsResponse, CardListResponse, CardResponse,
+    BatchCardsData, BatchCardsRequest, BatchCardsResponse, BatchNamedData, BatchNamedRequest,
+    BatchNamedResponse, BatchNamedResult, BatchQueriesData, BatchQueriesRequest,
+    BatchQueriesResponse, BatchQueryItem, BatchQueryResult, CardListResponse, CardResponse,
     NamedParams, PaginatedCardData, ReloadResponse, SearchParams, StatsResponse,
 };
 use crate::cache::manager::CacheStats;
@@ -26,6 +28,8 @@ use crate::models::card::Card;
         crate::api::handlers::admin_stats_overview,
         crate::api::handlers::search_cards,
         crate::api::handlers::batch_get_cards,
+        crate::api::handlers::batch_get_cards_by_name,
+        crate::api::handlers::batch_execute_queries,
         crate::api::handlers::get_card_by_name,
         crate::api::handlers::autocomplete_cards,
         crate::api::handlers::get_card,
@@ -46,6 +50,15 @@ use crate::models::card::Card;
             BatchCardsRequest,
             BatchCardsData,
             BatchCardsResponse,
+            BatchNamedRequest,
+            BatchNamedResult,
+            BatchNamedData,
+            BatchNamedResponse,
+            BatchQueryItem,
+            BatchQueryResult,
+            BatchQueriesRequest,
+            BatchQueriesData,
+            BatchQueriesResponse,
             CacheStats,
             SearchParams,
             NamedParams,

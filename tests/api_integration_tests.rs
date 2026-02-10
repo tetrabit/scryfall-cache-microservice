@@ -193,6 +193,61 @@ async fn test_batch_get_cards() {
 }
 
 #[tokio::test]
+async fn test_batch_get_cards_by_name() {
+    let mut app = create_test_app().await;
+
+    // Use a name from a known search result so the test doesn't depend on hard-coded data.
+    let (status, search_body) = send_json_request(&mut app, "GET", "/cards/search?q=sol+ring").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let first_name = search_body["data"]["data"]
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|c| c["name"].as_str())
+        .expect("expected at least one search result with a name");
+
+    let (status, body) = send_json_body_request(
+        &mut app,
+        "POST",
+        "/cards/named/batch",
+        json!({
+            "names": [first_name],
+            "fuzzy": false
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert_eq!(body["data"]["results"][0]["name"], first_name);
+    assert_eq!(body["data"]["results"][0]["card"]["name"], first_name);
+}
+
+#[tokio::test]
+async fn test_batch_execute_queries() {
+    let mut app = create_test_app().await;
+
+    let (status, body) = send_json_body_request(
+        &mut app,
+        "POST",
+        "/queries/batch",
+        json!({
+            "queries": [
+                { "id": "q1", "query": "c:r", "page": 1, "page_size": 5 },
+                { "id": "q2", "query": "c:u", "page": 1, "page_size": 5 }
+            ]
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert!(body["data"]["results"].is_array());
+    assert_eq!(body["data"]["results"][0]["id"], "q1");
+    assert!(body["data"]["results"][0]["success"].is_boolean());
+}
+
+#[tokio::test]
 async fn test_get_card_by_id() {
     let mut app = create_test_app().await;
 

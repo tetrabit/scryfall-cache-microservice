@@ -379,6 +379,48 @@ Response (example):
 
 Set `BATCH_MAX_IDS` to limit the maximum number of IDs accepted (default: 1000).
 
+### Batch Get Cards by Name
+
+Fetch multiple cards by name in one request.
+
+```bash
+POST /cards/named/batch
+```
+
+Example:
+```bash
+curl -X POST "http://localhost:8080/cards/named/batch" \
+  -H "content-type: application/json" \
+  -d '{
+    "names": ["Lightning Bolt", "Sol Ring"],
+    "fuzzy": true
+  }'
+```
+
+Set `BATCH_MAX_NAMES` to limit the maximum number of names accepted (default: 50).
+
+### Batch Execute Queries
+
+Execute multiple search queries in a single request (returns per-query results).
+
+```bash
+POST /queries/batch
+```
+
+Example:
+```bash
+curl -X POST "http://localhost:8080/queries/batch" \
+  -H "content-type: application/json" \
+  -d '{
+    "queries": [
+      { "id": "q1", "query": "c:r", "page": 1, "page_size": 10 },
+      { "id": "q2", "query": "t:instant c:u", "page": 1, "page_size": 10 }
+    ]
+  }'
+```
+
+Set `BATCH_MAX_QUERIES` to limit the maximum number of queries accepted (default: 10).
+
 ### Get Card by Name
 
 ```bash

@@ -13,8 +13,9 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use super::handlers::{
-    admin_reload, admin_stats_overview, autocomplete_cards, batch_get_cards, get_card,
-    get_card_by_name, get_stats, health, health_live, health_ready, search_cards, AppState,
+    admin_reload, admin_stats_overview, autocomplete_cards, batch_execute_queries, batch_get_cards,
+    batch_get_cards_by_name, get_card, get_card_by_name, get_stats, health, health_live,
+    health_ready, search_cards, AppState,
 };
 use super::middleware::logging_middleware;
 use super::openapi::ApiDoc;
@@ -37,9 +38,11 @@ pub fn create_router(state: AppState) -> Router {
         // Card search endpoints
         .route("/cards/search", get(search_cards))
         .route("/cards/named", get(get_card_by_name))
+        .route("/cards/named/batch", post(batch_get_cards_by_name))
         .route("/cards/autocomplete", get(autocomplete_cards))
         .route("/cards/:id", get(get_card))
         .route("/cards/batch", post(batch_get_cards))
+        .route("/queries/batch", post(batch_execute_queries))
         // Stats endpoint
         .route("/stats", get(get_stats))
         // Metrics endpoint (Prometheus)

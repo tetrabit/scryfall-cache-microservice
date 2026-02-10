@@ -202,6 +202,68 @@ pub struct BatchCardsResponse {
     pub error: Option<crate::errors::response::ErrorDetail>,
 }
 
+/// Batch named lookup request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BatchNamedRequest {
+    /// List of card names
+    pub names: Vec<String>,
+    /// If true, use fuzzy matching (slower, may call upstream more often)
+    pub fuzzy: Option<bool>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchNamedResult {
+    pub name: String,
+    pub card: Option<Card>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchNamedData {
+    pub results: Vec<BatchNamedResult>,
+    pub not_found: Vec<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchNamedResponse {
+    pub success: bool,
+    pub data: Option<BatchNamedData>,
+    pub error: Option<crate::errors::response::ErrorDetail>,
+}
+
+/// Batch query execution request
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BatchQueryItem {
+    pub id: String,
+    pub query: String,
+    pub page: Option<usize>,
+    pub page_size: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BatchQueriesRequest {
+    pub queries: Vec<BatchQueryItem>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchQueryResult {
+    pub id: String,
+    pub success: bool,
+    pub data: Option<PaginatedResponse<Card>>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchQueriesData {
+    pub results: Vec<BatchQueryResult>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BatchQueriesResponse {
+    pub success: bool,
+    pub data: Option<BatchQueriesData>,
+    pub error: Option<crate::errors::response::ErrorDetail>,
+}
+
 /// Autocomplete response (Scryfall catalog format)
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AutocompleteResponse {
@@ -510,6 +572,180 @@ pub async fn batch_get_cards(
             ErrorResponse::internal_error(format!("Batch get cards failed: {}", e)).into_response()
         }
     }
+}
+
+/// Batch get cards by name
+#[utoipa::path(
+    post,
+    path = "/cards/named/batch",
+    tag = "cards",
+    request_body = BatchNamedRequest,
+    responses(
+        (status = 200, description = "Batch named card lookup result", body = BatchNamedResponse),
+        (status = 400, description = "Bad request", body = BatchNamedResponse),
+        (status = 500, description = "Internal server error", body = BatchNamedResponse)
+    )
+)]
+pub async fn batch_get_cards_by_name(
+    State(state): State<AppState>,
+    Json(req): Json<BatchNamedRequest>,
+) -> impl IntoResponse {
+    let max_names: usize = std::env::var("BATCH_MAX_NAMES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+
+    if req.names.is_empty() {
+        return ErrorResponse::validation_error("names must not be empty").into_response();
+    }
+    if req.names.len() > max_names {
+        return ErrorResponse::validation_error(format!(
+            "too many names: {} (max {})",
+            req.names.len(),
+            max_names
+        ))
+        .into_response();
+    }
+
+    let fuzzy = req.fuzzy.unwrap_or(true);
+
+    let mut results = Vec::with_capacity(req.names.len());
+    let mut not_found = Vec::new();
+
+    for name in req.names {
+        match state.cache_manager.search_by_name(&name, fuzzy).await {
+            Ok(card_opt) => {
+                if card_opt.is_none() {
+                    not_found.push(name.clone());
+                }
+                results.push(BatchNamedResult {
+                    name,
+                    card: card_opt,
+                });
+            }
+            Err(e) => {
+                error!("Batch named lookup failed for '{}': {}", name, e);
+                // Keep partial results; mark as not found.
+                not_found.push(name.clone());
+                results.push(BatchNamedResult { name, card: None });
+            }
+        }
+    }
+
+    let data = BatchNamedData { results, not_found };
+    (StatusCode::OK, Json(ApiResponse::success(data))).into_response()
+}
+
+/// Batch execute queries
+#[utoipa::path(
+    post,
+    path = "/queries/batch",
+    tag = "cards",
+    request_body = BatchQueriesRequest,
+    responses(
+        (status = 200, description = "Batch query execution result", body = BatchQueriesResponse),
+        (status = 400, description = "Bad request", body = BatchQueriesResponse),
+        (status = 500, description = "Internal server error", body = BatchQueriesResponse)
+    )
+)]
+pub async fn batch_execute_queries(
+    State(state): State<AppState>,
+    Json(req): Json<BatchQueriesRequest>,
+) -> impl IntoResponse {
+    let max_queries: usize = std::env::var("BATCH_MAX_QUERIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+
+    if req.queries.is_empty() {
+        return ErrorResponse::validation_error("queries must not be empty").into_response();
+    }
+    if req.queries.len() > max_queries {
+        return ErrorResponse::validation_error(format!(
+            "too many queries: {} (max {})",
+            req.queries.len(),
+            max_queries
+        ))
+        .into_response();
+    }
+
+    let mut results = Vec::with_capacity(req.queries.len());
+
+    for item in req.queries {
+        // Validate query string
+        if let Err(e) = state.query_validator.validate_query_string(&item.query) {
+            results.push(BatchQueryResult {
+                id: item.id,
+                success: false,
+                data: None,
+                error: Some(e.to_string()),
+            });
+            continue;
+        }
+
+        // Parse and validate query AST
+        match QueryParser::parse(&item.query) {
+            Ok(ast) => {
+                if let Err(e) = state.query_validator.validate_ast(&ast) {
+                    results.push(BatchQueryResult {
+                        id: item.id,
+                        success: false,
+                        data: None,
+                        error: Some(e.to_string()),
+                    });
+                    continue;
+                }
+            }
+            Err(e) => {
+                results.push(BatchQueryResult {
+                    id: item.id,
+                    success: false,
+                    data: None,
+                    error: Some(format!("Query parse error: {}", e)),
+                });
+                continue;
+            }
+        }
+
+        let page = item.page.unwrap_or(1).max(1);
+        let page_size = item.page_size.unwrap_or(100).min(1000).max(1);
+
+        match state
+            .cache_manager
+            .search_paginated(&item.query, page, page_size)
+            .await
+        {
+            Ok((cards, total)) => {
+                let total_pages = total.div_ceil(page_size);
+                let has_more = page < total_pages;
+                let data = PaginatedResponse {
+                    data: cards,
+                    total,
+                    page,
+                    page_size,
+                    total_pages,
+                    has_more,
+                };
+                results.push(BatchQueryResult {
+                    id: item.id,
+                    success: true,
+                    data: Some(data),
+                    error: None,
+                });
+            }
+            Err(e) => {
+                results.push(BatchQueryResult {
+                    id: item.id,
+                    success: false,
+                    data: None,
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    let data = BatchQueriesData { results };
+    (StatusCode::OK, Json(ApiResponse::success(data))).into_response()
 }
 
 /// Get a specific card by ID
