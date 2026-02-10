@@ -6,6 +6,7 @@ pub mod circuit_breaker;
 pub mod config;
 pub mod db;
 pub mod errors;
+pub mod graphql;
 pub mod metrics;
 pub mod models;
 pub mod query;

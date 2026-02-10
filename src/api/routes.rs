@@ -14,9 +14,15 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use super::handlers::{
     admin_reload, admin_stats_overview, autocomplete_cards, batch_execute_queries, batch_get_cards,
-    batch_get_cards_by_name, get_card, get_card_by_name, get_stats, health, health_live,
-    health_ready, search_cards, AppState,
+    batch_get_cards_by_name, get_card, get_card_by_name, get_stats, graphql_playground, health,
+    health_live, health_ready, search_cards, AppState,
 };
+use axum::{
+    extract::State,
+    response::{IntoResponse, Response},
+    Json,
+};
+use async_graphql::{Request as GraphQLRequest, Response as GraphQLResponse};
 use super::middleware::logging_middleware;
 use super::openapi::ApiDoc;
 use crate::metrics;
@@ -28,11 +34,22 @@ pub fn create_router(state: AppState) -> Router {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Clone GraphQL schema for extension layer
+    let graphql_schema = state.graphql_schema.clone();
+
     Router::new()
         // Health check
         .route("/health", get(health))
         .route("/health/live", get(health_live))
         .route("/health/ready", get(health_ready))
+        // GraphQL endpoint (using async-graphql-axum integration)
+        .route(
+            "/graphql",
+            get(graphql_query_handler).post(graphql_query_handler),
+        )
+        .route("/graphql/playground", get(graphql_playground))
+        // Add GraphQL schema as extension for the /graphql route
+        .layer(axum::Extension(graphql_schema))
         // Admin API endpoints (for web UI)
         .route("/api/admin/stats/overview", get(admin_stats_overview))
         // Card search endpoints
@@ -66,4 +83,13 @@ pub fn create_router(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http())
         // Add shared state
         .with_state(state)
+}
+
+/// GraphQL query handler
+async fn graphql_query_handler(
+    axum::Extension(schema): axum::Extension<crate::graphql::GraphQLSchema>,
+    Json(req): Json<GraphQLRequest>,
+) -> Json<GraphQLResponse> {
+    let response = schema.execute(req).await;
+    Json(response)
 }

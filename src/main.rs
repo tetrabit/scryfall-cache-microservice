@@ -5,6 +5,7 @@ mod circuit_breaker;
 mod config;
 mod db;
 mod errors;
+mod graphql;
 mod metrics;
 mod models;
 mod query;
@@ -22,6 +23,7 @@ use api::routes::create_router;
 use cache::manager::CacheManager;
 use cache::redis::{RedisCache, RedisConfig};
 use config::Config;
+use graphql::create_schema;
 use scryfall::bulk_loader::BulkLoader;
 use scryfall::client::ScryfallClient;
 
@@ -159,14 +161,21 @@ async fn main() -> Result<()> {
     // Initialize query validator
     let query_validator = query::QueryValidator::new(query::QueryLimits::from_env());
 
-    // Clone bulk_loader for background job
-    let bulk_loader_clone = Arc::new(bulk_loader);
+    // Wrap cache_manager in Arc for sharing
+    let cache_manager_arc = Arc::new(cache_manager);
+
+    // Clone bulk_loader for background job and wrap in Arc
+    let bulk_loader_clone = Arc::new(bulk_loader.clone());
+
+    // Create GraphQL schema
+    let graphql_schema = create_schema(cache_manager_arc.clone(), bulk_loader_clone.clone());
 
     // Create application state
     let state = Arc::new(AppStateInner {
-        cache_manager,
+        cache_manager: cache_manager_arc,
         bulk_loader: (*bulk_loader_clone).clone(),
         query_validator,
+        graphql_schema,
         instance_id: config.server.instance_id.clone(),
     });
 

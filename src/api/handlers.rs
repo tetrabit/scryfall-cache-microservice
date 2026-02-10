@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Html},
 };
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::cache::manager::{CacheManager, CacheStats};
 use crate::errors::{ErrorCode, ErrorResponse};
+use crate::graphql::GraphQLSchema;
 use crate::models::card::Card;
 use crate::query::{QueryParser, QueryValidator};
 use crate::scryfall::bulk_loader::BulkLoader;
@@ -24,9 +25,10 @@ lazy_static::lazy_static! {
 pub type AppState = Arc<AppStateInner>;
 
 pub struct AppStateInner {
-    pub cache_manager: CacheManager,
+    pub cache_manager: Arc<CacheManager>,
     pub bulk_loader: BulkLoader,
     pub query_validator: QueryValidator,
+    pub graphql_schema: GraphQLSchema,
     pub instance_id: String,
 }
 
@@ -1041,4 +1043,20 @@ pub async fn autocomplete_cards(
             ErrorResponse::database_error(format!("Autocomplete failed: {}", e)).into_response()
         }
     }
+}
+
+// ============================================================================
+// GraphQL Handlers
+// ============================================================================
+
+use async_graphql::http::{playground_source, GraphQLPlaygroundConfig};
+
+/// GraphQL endpoint handler (returns the schema for axum-graphql integration)
+pub fn graphql_schema_provider(state: &AppState) -> crate::graphql::GraphQLSchema {
+    state.graphql_schema.clone()
+}
+
+/// GraphQL Playground handler
+pub async fn graphql_playground() -> Html<String> {
+    Html(playground_source(GraphQLPlaygroundConfig::new("/graphql")))
 }
