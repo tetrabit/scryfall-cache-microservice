@@ -5,6 +5,7 @@ use crate::api::handlers::{
     PaginatedCardData, ReloadResponse, SearchParams, StatsResponse,
 };
 use crate::cache::manager::CacheStats;
+use crate::errors::{ErrorCode, ErrorDetail, ErrorResponse};
 use crate::models::card::Card;
 
 #[derive(OpenApi)]
@@ -39,6 +40,9 @@ use crate::models::card::Card;
             SearchParams,
             NamedParams,
             AutocompleteParams,
+            ErrorResponse,
+            ErrorDetail,
+            ErrorCode,
         )
     ),
     tags(
