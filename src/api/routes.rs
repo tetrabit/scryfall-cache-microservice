@@ -14,6 +14,7 @@ use super::handlers::{
     admin_reload, autocomplete_cards, get_card, get_card_by_name, get_stats, health, search_cards,
     AppState,
 };
+use super::middleware::logging_middleware;
 use super::openapi::ApiDoc;
 use crate::metrics;
 
@@ -40,7 +41,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/admin/reload", post(admin_reload))
         // OpenAPI documentation
         .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Add middleware (metrics first to track all requests)
+        // Add middleware (order matters: logging -> metrics -> cors -> trace)
+        .layer(middleware::from_fn(logging_middleware))
         .layer(middleware::from_fn(metrics::middleware::track_metrics))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
