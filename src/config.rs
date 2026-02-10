@@ -13,6 +13,10 @@ pub struct Config {
 pub struct DatabaseConfig {
     pub url: String,
     pub max_connections: u32,
+    pub min_connections: u32,
+    pub acquire_timeout_ms: u64,
+    pub idle_timeout_seconds: u64,
+    pub max_lifetime_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +51,22 @@ impl Config {
                     .unwrap_or_else(|_| "10".to_string())
                     .parse()
                     .context("DATABASE_MAX_CONNECTIONS must be a valid number")?,
+                min_connections: env::var("DATABASE_MIN_CONNECTIONS")
+                    .unwrap_or_else(|_| "0".to_string())
+                    .parse()
+                    .context("DATABASE_MIN_CONNECTIONS must be a valid number")?,
+                acquire_timeout_ms: env::var("DATABASE_ACQUIRE_TIMEOUT_MS")
+                    .unwrap_or_else(|_| "30000".to_string())
+                    .parse()
+                    .context("DATABASE_ACQUIRE_TIMEOUT_MS must be a valid number")?,
+                idle_timeout_seconds: env::var("DATABASE_IDLE_TIMEOUT_SECONDS")
+                    .unwrap_or_else(|_| "600".to_string())
+                    .parse()
+                    .context("DATABASE_IDLE_TIMEOUT_SECONDS must be a valid number")?,
+                max_lifetime_seconds: env::var("DATABASE_MAX_LIFETIME_SECONDS")
+                    .unwrap_or_else(|_| "1800".to_string())
+                    .parse()
+                    .context("DATABASE_MAX_LIFETIME_SECONDS must be a valid number")?,
             },
             server: ServerConfig {
                 host: env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
@@ -100,6 +120,10 @@ mod tests {
             database: DatabaseConfig {
                 url: "postgresql://localhost/test".to_string(),
                 max_connections: 10,
+                min_connections: 0,
+                acquire_timeout_ms: 30_000,
+                idle_timeout_seconds: 600,
+                max_lifetime_seconds: 1800,
             },
             server: ServerConfig {
                 host: "127.0.0.1".to_string(),

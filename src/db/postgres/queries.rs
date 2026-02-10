@@ -99,38 +99,19 @@ pub async fn get_card_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Card>> {
 
 /// Get multiple cards by IDs
 pub async fn get_cards_by_ids(pool: &PgPool, ids: &[Uuid]) -> Result<Vec<Card>> {
-    // PostgreSQL has a limit on the number of parameters
-    // Chunk large ID lists to avoid hitting limits
-    const CHUNK_SIZE: usize = 500; // Reduced chunk size for safety
-
     if ids.is_empty() {
         return Ok(Vec::new());
     }
 
-    let mut all_cards = Vec::with_capacity(ids.len());
+    // Use array binding to avoid dynamic SQL and keep the statement cacheable.
+    // This is typically faster than building a large IN (...) list.
+    let cards = sqlx::query_as::<_, Card>("SELECT * FROM cards WHERE id = ANY($1)")
+        .bind(ids)
+        .fetch_all(pool)
+        .await
+        .context("Failed to fetch cards by IDs")?;
 
-    for chunk in ids.chunks(CHUNK_SIZE) {
-        // Build a query with placeholders
-        let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("${}", i)).collect();
-        let query_str = format!(
-            "SELECT * FROM cards WHERE id IN ({})",
-            placeholders.join(", ")
-        );
-
-        let mut query = sqlx::query_as::<_, Card>(&query_str);
-        for id in chunk {
-            query = query.bind(id);
-        }
-
-        let cards = query
-            .fetch_all(pool)
-            .await
-            .context("Failed to fetch cards by IDs")?;
-
-        all_cards.extend(cards);
-    }
-
-    Ok(all_cards)
+    Ok(cards)
 }
 
 /// Search cards by name (fuzzy match)
