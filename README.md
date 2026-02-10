@@ -45,6 +45,19 @@ User Request → REST API → Query Parser
               Return Data
 ```
 
+## Scaling Notes (Scale-Ready, Not Scaled)
+
+This service is intended to stay simple for a single low-traffic website, while keeping a clean path to scale later.
+
+- **Stateless API**: persistent state lives in the database; caching is stored in the database (not in-process).
+- **Multiple instances**: you can run more than one API process against the same DB without correctness changes.
+- **Background refresh**: if you run multiple instances, consider setting `BULK_REFRESH_ENABLED=false` on all but one instance to avoid redundant bulk downloads/imports.
+- **Health endpoints**: use `/health/live` for liveness and `/health/ready` for readiness-based routing.
+
+When to scale further:
+- Add horizontal scaling/LB only when you need higher availability or zero-downtime deploys.
+- Add read replicas only once the DB becomes a read bottleneck after query/index tuning.
+
 ## Technology Stack
 
 - **Rust** - High-performance, memory-safe systems programming
