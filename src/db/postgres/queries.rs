@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use crate::models::card::Card;
@@ -12,18 +12,48 @@ pub async fn insert_cards_batch(pool: &PgPool, cards: &[Card]) -> Result<()> {
 
     let mut transaction = pool.begin().await.context("Failed to begin transaction")?;
 
-    for card in cards {
-        sqlx::query(
+    // Insert in chunks to avoid enormous SQL statements while still reducing per-row overhead.
+    const CHUNK_SIZE: usize = 250;
+    for chunk in cards.chunks(CHUNK_SIZE) {
+        let mut builder = QueryBuilder::<Postgres>::new(
             r#"
             INSERT INTO cards (
                 id, oracle_id, name, mana_cost, cmc, type_line, oracle_text,
                 colors, color_identity, set_code, set_name, collector_number,
                 rarity, power, toughness, loyalty, keywords, prices, image_uris,
                 card_faces, legalities, released_at, raw_json
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
             )
+            "#,
+        );
+
+        builder.push_values(chunk, |mut b, card| {
+            b.push_bind(card.id)
+                .push_bind(card.oracle_id)
+                .push_bind(&card.name)
+                .push_bind(&card.mana_cost)
+                .push_bind(card.cmc)
+                .push_bind(&card.type_line)
+                .push_bind(&card.oracle_text)
+                .push_bind(&card.colors)
+                .push_bind(&card.color_identity)
+                .push_bind(&card.set_code)
+                .push_bind(&card.set_name)
+                .push_bind(&card.collector_number)
+                .push_bind(&card.rarity)
+                .push_bind(&card.power)
+                .push_bind(&card.toughness)
+                .push_bind(&card.loyalty)
+                .push_bind(&card.keywords)
+                .push_bind(&card.prices)
+                .push_bind(&card.image_uris)
+                .push_bind(&card.card_faces)
+                .push_bind(&card.legalities)
+                .push_bind(card.released_at)
+                .push_bind(&card.raw_json);
+        });
+
+        builder.push(
+            r#"
             ON CONFLICT (id) DO UPDATE SET
                 oracle_id = EXCLUDED.oracle_id,
                 name = EXCLUDED.name,
@@ -49,33 +79,13 @@ pub async fn insert_cards_batch(pool: &PgPool, cards: &[Card]) -> Result<()> {
                 raw_json = EXCLUDED.raw_json,
                 updated_at = NOW()
             "#,
-        )
-        .bind(card.id)
-        .bind(card.oracle_id)
-        .bind(&card.name)
-        .bind(&card.mana_cost)
-        .bind(card.cmc)
-        .bind(&card.type_line)
-        .bind(&card.oracle_text)
-        .bind(&card.colors)
-        .bind(&card.color_identity)
-        .bind(&card.set_code)
-        .bind(&card.set_name)
-        .bind(&card.collector_number)
-        .bind(&card.rarity)
-        .bind(&card.power)
-        .bind(&card.toughness)
-        .bind(&card.loyalty)
-        .bind(&card.keywords)
-        .bind(&card.prices)
-        .bind(&card.image_uris)
-        .bind(&card.card_faces)
-        .bind(&card.legalities)
-        .bind(card.released_at)
-        .bind(&card.raw_json)
-        .execute(&mut *transaction)
-        .await
-        .context("Failed to insert card")?;
+        );
+
+        builder
+            .build()
+            .execute(&mut *transaction)
+            .await
+            .context("Failed to insert card batch")?;
     }
 
     transaction
