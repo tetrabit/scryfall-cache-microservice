@@ -1,4 +1,5 @@
 mod api;
+mod background;
 mod cache;
 mod config;
 mod db;
@@ -86,12 +87,19 @@ async fn main() -> Result<()> {
     // Initialize query validator
     let query_validator = query::QueryValidator::new(query::QueryLimits::from_env());
 
+    // Clone bulk_loader for background job
+    let bulk_loader_clone = Arc::new(bulk_loader);
+
     // Create application state
     let state = Arc::new(AppStateInner {
         cache_manager,
-        bulk_loader,
+        bulk_loader: (*bulk_loader_clone).clone(),
         query_validator,
     });
+
+    // Start background bulk data refresh job
+    let refresh_config = background::bulk_refresh::BulkRefreshConfig::from_env();
+    let _refresh_handle = background::start_bulk_refresh_job(bulk_loader_clone, refresh_config);
 
     // Create router
     let app = create_router(state);

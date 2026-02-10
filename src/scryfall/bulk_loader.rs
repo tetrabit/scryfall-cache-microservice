@@ -39,6 +39,7 @@ struct BulkDataInfo {
     content_encoding: String,
 }
 
+#[derive(Clone)]
 pub struct BulkLoader {
     db: Database,
     config: ScryfallConfig,
@@ -163,6 +164,43 @@ impl BulkLoader {
         BULK_DATA_LAST_LOAD_TIMESTAMP.set(chrono::Utc::now().timestamp());
 
         Ok(())
+    }
+
+    /// Check if Scryfall's bulk data has been updated since our last import
+    ///
+    /// This enables "smart refresh" - only downloading when data actually changes
+    pub async fn check_upstream_updated(&self) -> Result<bool> {
+        // Get our last bulk data info if we have it
+        let our_updated_at = self.db.get_last_bulk_import().await?;
+
+        // Fetch Scryfall's current bulk data info
+        let bulk_info = self.discover_bulk_data().await?;
+        
+        // Parse Scryfall's updated_at timestamp
+        let their_updated_at = chrono::DateTime::parse_from_rfc3339(&bulk_info.updated_at)
+            .context("Failed to parse Scryfall updated_at timestamp")?
+            .naive_utc();
+
+        // If we have previous import metadata, compare timestamps
+        if let Some(our_time) = our_updated_at {
+            let is_newer = their_updated_at > our_time;
+            if is_newer {
+                info!(
+                    "Scryfall bulk data updated: ours={}, theirs={}",
+                    our_time, their_updated_at
+                );
+            } else {
+                debug!(
+                    "Scryfall bulk data unchanged: ours={}, theirs={}",
+                    our_time, their_updated_at
+                );
+            }
+            Ok(is_newer)
+        } else {
+            // No metadata, assume we should update
+            info!("No bulk import metadata found, assuming update needed");
+            Ok(true)
+        }
     }
 
     /// Discover the bulk data download URI
