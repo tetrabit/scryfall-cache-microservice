@@ -17,20 +17,28 @@ async fn create_test_app() -> axum::Router {
         .expect("Failed to connect to database");
 
     let scryfall_client = scryfall::client::ScryfallClient::new(&config.scryfall);
-    let cache_manager = cache::manager::CacheManager::new(
+    let cache_manager = Arc::new(cache::manager::CacheManager::new(
+        None, // Redis optional in tests
         db_pool.clone(),
         scryfall_client,
         config.cache.query_cache_ttl_hours as i32,
-    );
+    ));
     let bulk_loader =
         scryfall::bulk_loader::BulkLoader::new(db_pool.clone(), config.scryfall.clone());
     let query_validator =
         scryfall_cache::query::QueryValidator::new(query::QueryLimits::from_env());
 
+    // GraphQL schema is part of AppStateInner and needs access to shared state.
+    let graphql_schema = scryfall_cache::graphql::create_schema(
+        cache_manager.clone(),
+        Arc::new(bulk_loader.clone()),
+    );
+
     let state = Arc::new(api::handlers::AppStateInner {
         cache_manager,
         bulk_loader,
         query_validator,
+        graphql_schema,
         instance_id: config.server.instance_id.clone(),
     });
 
