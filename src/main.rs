@@ -12,6 +12,7 @@ mod utils;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
+use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -21,6 +22,37 @@ use cache::manager::CacheManager;
 use config::Config;
 use scryfall::bulk_loader::BulkLoader;
 use scryfall::client::ScryfallClient;
+
+/// Wait for shutdown signal (SIGTERM or SIGINT)
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received Ctrl+C signal");
+        },
+        _ = terminate => {
+            info!("Received SIGTERM signal");
+        },
+    }
+
+    info!("Starting graceful shutdown...");
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -114,9 +146,13 @@ async fn main() -> Result<()> {
 
     info!("Server listening on {}", addr);
 
+    // Serve with graceful shutdown
     axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .context("Server error")?;
+
+    info!("Server shutdown complete");
 
     Ok(())
 }
