@@ -7,11 +7,11 @@ jobs = 16
 # Incremental compilation (enabled by default for debug, but explicit here)
 incremental = true
 
-# Uncomment to use faster linker if available:
+# Note: To use mold linker, run builds with: mold -run cargo build
+# Or install clang and uncomment below:
 # [target.x86_64-unknown-linux-gnu]
 # linker = "clang"
-# rustflags = ["-C", "link-arg=-fuse-ld=mold"]  # Requires: apt install mold
-# rustflags = ["-C", "link-arg=-fuse-ld=lld"]   # Requires: apt install lld
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [profile.dev]
 # Split debug info to reduce linking time
