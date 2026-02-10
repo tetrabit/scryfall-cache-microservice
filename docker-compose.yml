@@ -38,6 +38,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Compose includes a Redis service; build with Redis support by default.
+        # Override with `CARGO_FEATURES=` to disable, or add more features as needed.
+        CARGO_FEATURES: ${CARGO_FEATURES:-redis_cache}
     container_name: scryfall-cache-api
     environment:
       DATABASE_URL: postgresql://scryfall:${POSTGRES_PASSWORD:-password}@postgres:5432/scryfall_cache

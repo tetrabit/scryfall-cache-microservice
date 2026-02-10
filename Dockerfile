@@ -16,13 +16,19 @@ WORKDIR /app
 
 # Copy all source files
 COPY Cargo.toml ./
+COPY Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
 
 # Build the application in release mode
 # Set SQLX_OFFLINE to skip compile-time SQL verification
 ENV SQLX_OFFLINE=true
-RUN cargo build --release
+ARG CARGO_FEATURES=""
+RUN if [ -n "$CARGO_FEATURES" ]; then \
+      cargo build --release --features "$CARGO_FEATURES"; \
+    else \
+      cargo build --release; \
+    fi
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim
