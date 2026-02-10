@@ -17,7 +17,11 @@ async fn create_test_app() -> axum::Router {
         .expect("Failed to connect to database");
 
     let scryfall_client = scryfall::client::ScryfallClient::new(&config.scryfall);
-    let cache_manager = cache::manager::CacheManager::new(db_pool.clone(), scryfall_client);
+    let cache_manager = cache::manager::CacheManager::new(
+        db_pool.clone(),
+        scryfall_client,
+        config.cache.query_cache_ttl_hours as i32,
+    );
     let bulk_loader =
         scryfall::bulk_loader::BulkLoader::new(db_pool.clone(), config.scryfall.clone());
     let query_validator =

@@ -118,7 +118,11 @@ async fn main() -> Result<()> {
     }
 
     // Initialize cache manager
-    let cache_manager = CacheManager::new(db.clone(), scryfall_client);
+    let cache_manager = CacheManager::new(
+        db.clone(),
+        scryfall_client,
+        config.cache.query_cache_ttl_hours as i32,
+    );
 
     // Initialize query validator
     let query_validator = query::QueryValidator::new(query::QueryLimits::from_env());

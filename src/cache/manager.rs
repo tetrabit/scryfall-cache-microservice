@@ -12,16 +12,18 @@ pub struct CacheManager {
     db: Database,
     query_executor: QueryExecutor,
     scryfall_client: ScryfallClient,
+    query_cache_ttl_hours: i32,
 }
 
 impl CacheManager {
-    pub fn new(db: Database, scryfall_client: ScryfallClient) -> Self {
+    pub fn new(db: Database, scryfall_client: ScryfallClient, query_cache_ttl_hours: i32) -> Self {
         let query_executor = QueryExecutor::new(db.clone());
 
         Self {
             db,
             query_executor,
             scryfall_client,
+            query_cache_ttl_hours,
         }
     }
 
@@ -72,7 +74,7 @@ impl CacheManager {
                 // Store in cache
                 let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
                 self.db
-                    .store_query_cache(&query_hash, &card_ids, 24)
+                    .store_query_cache(&query_hash, &card_ids, self.query_cache_ttl_hours)
                     .await
                     .ok();
 
@@ -95,7 +97,7 @@ impl CacheManager {
                     // Store in cache
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
                     self.db
-                        .store_query_cache(&query_hash, &card_ids, 24)
+                        .store_query_cache(&query_hash, &card_ids, self.query_cache_ttl_hours)
                         .await
                         .ok();
 
@@ -121,7 +123,7 @@ impl CacheManager {
                     // Store in cache
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
                     self.db
-                        .store_query_cache(&query_hash, &card_ids, 24)
+                        .store_query_cache(&query_hash, &card_ids, self.query_cache_ttl_hours)
                         .await
                         .ok();
 
