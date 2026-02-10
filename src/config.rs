@@ -37,6 +37,15 @@ pub struct ScryfallConfig {
 pub struct CacheConfig {
     pub query_cache_ttl_hours: u32,
     pub query_cache_max_size: usize,
+    pub redis: Option<RedisConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RedisConfig {
+    pub url: String,
+    pub ttl_seconds: u64,
+    pub max_value_size_mb: usize,
+    pub enabled: bool,
 }
 
 impl Config {
@@ -101,12 +110,38 @@ impl Config {
                     .unwrap_or_else(|_| "10000".to_string())
                     .parse()
                     .context("QUERY_CACHE_MAX_SIZE must be a valid number")?,
+                redis: Self::redis_config_from_env(),
             },
         })
     }
 
     pub fn server_address(&self) -> String {
         format!("{}:{}", self.server.host, self.server.port)
+    }
+
+    fn redis_config_from_env() -> Option<RedisConfig> {
+        // Redis is optional - only enabled if REDIS_ENABLED=true
+        let enabled = env::var("REDIS_ENABLED")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false);
+
+        if !enabled {
+            return None;
+        }
+
+        Some(RedisConfig {
+            url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string()),
+            ttl_seconds: env::var("REDIS_TTL_SECONDS")
+                .unwrap_or_else(|_| "3600".to_string())
+                .parse()
+                .unwrap_or(3600),
+            max_value_size_mb: env::var("REDIS_MAX_VALUE_SIZE_MB")
+                .unwrap_or_else(|_| "10".to_string())
+                .parse()
+                .unwrap_or(10),
+            enabled: true,
+        })
     }
 }
 
@@ -138,6 +173,7 @@ mod tests {
             cache: CacheConfig {
                 query_cache_ttl_hours: 24,
                 query_cache_max_size: 10000,
+                redis: None,
             },
         };
 

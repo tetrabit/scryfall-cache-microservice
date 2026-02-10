@@ -20,6 +20,20 @@ services:
     networks:
       - scryfall-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: scryfall-cache-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scryfall-network
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -35,11 +49,17 @@ services:
       SCRYFALL_CACHE_TTL_HOURS: ${SCRYFALL_CACHE_TTL_HOURS:-24}
       QUERY_CACHE_TTL_HOURS: ${QUERY_CACHE_TTL_HOURS:-24}
       QUERY_CACHE_MAX_SIZE: ${QUERY_CACHE_MAX_SIZE:-10000}
+      REDIS_ENABLED: ${REDIS_ENABLED:-false}
+      REDIS_URL: redis://redis:6379
+      REDIS_TTL_SECONDS: ${REDIS_TTL_SECONDS:-3600}
+      REDIS_MAX_VALUE_SIZE_MB: ${REDIS_MAX_VALUE_SIZE_MB:-10}
       RUST_LOG: ${RUST_LOG:-info,scryfall_cache=debug}
     ports:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]

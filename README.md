@@ -5,12 +5,13 @@ A high-performance, caching microservice for Scryfall Magic: The Gathering card 
 ## Features
 
 - **Dual Database Backends**: PostgreSQL (production) or SQLite (Electron/embedded)
+- **Optional Redis Cache**: Ultra-fast in-memory caching layer (1-5ms response time)
 - **Bulk Data Loading**: Automatically downloads and imports 500MB+ of Scryfall card data on startup
-- **Smart Caching**: Three-tier lookup strategy (query cache → local database → Scryfall API)
+- **Smart Caching**: Four-tier lookup strategy (Redis → query cache → local database → Scryfall API)
 - **Full Query Support**: Parses and executes Scryfall query syntax locally
 - **Rate Limiting**: Respects Scryfall's 10 req/sec API limit with GCRA algorithm
 - **Multi-threaded**: Built on Tokio for high-performance async operations
-- **Docker Ready**: Complete Docker Compose setup with PostgreSQL
+- **Docker Ready**: Complete Docker Compose setup with PostgreSQL and Redis
 - **Low Memory**: SQLite backend uses <100MB RAM (vs PostgreSQL's 500MB)
 - **REST API**: Clean HTTP endpoints for card searches and queries
 
@@ -35,15 +36,82 @@ See [SQLITE_BACKEND.md](./SQLITE_BACKEND.md) for detailed comparison and usage.
 ```
 User Request → REST API → Query Parser
                               ↓
-                    Cache Check (PostgreSQL)
+                    Redis Cache Check (optional, 1-5ms)
                     ↓ (miss)    ↓ (hit)
-              Rate-Limited      Return
-              Scryfall API      Cached Data
-                    ↓
-              Cache Result
-                    ↓
-              Return Data
+              Query Cache Check (PostgreSQL, 20-50ms)
+              ↓ (miss)    ↓ (hit)
+        Rate-Limited      Return Cached Data
+        Scryfall API
+        (200-500ms)
+              ↓
+        Cache Result (Redis + DB)
+              ↓
+        Return Data
 ```
+
+**Performance tiers:**
+1. **Redis** (optional): <5ms - Hot query results and frequently accessed cards
+2. **PostgreSQL/SQLite**: 20-50ms - All cards and query cache
+3. **Scryfall API**: 200-500ms - Fallback for missing data
+
+## Redis Cache Layer (Optional)
+
+The Redis cache layer provides sub-5ms response times for frequently accessed data. It's **optional** and disabled by default.
+
+### When to Enable Redis
+
+- **High traffic**: Multiple concurrent users performing similar queries
+- **Hot data**: Frequently accessed cards or popular queries (e.g., top competitive decks)
+- **Performance critical**: Applications requiring <10ms p99 latency
+
+### When to Skip Redis
+
+- **Low traffic**: Single user or infrequent requests
+- **Development**: Local development environments
+- **Cost sensitive**: Minimal infra deploy (SQLite is sufficient for small sites)
+
+### Enabling Redis
+
+**With Docker Compose:**
+```bash
+# Set REDIS_ENABLED=true in .env or export it
+export REDIS_ENABLED=true
+docker-compose up -d
+```
+
+**Standalone:**
+```bash
+# Start Redis
+docker run -d -p 6379:6379 redis:7-alpine
+
+# Enable in application
+export REDIS_ENABLED=true
+export REDIS_URL=redis://localhost:6379
+cargo run --release --features redis_cache
+```
+
+**Build Requirements:**
+- Redis feature must be enabled at compile time: `--features redis_cache`
+- Or use default features which include both postgres and redis_cache
+
+### Redis Configuration
+
+```bash
+REDIS_ENABLED=true                 # Enable/disable Redis cache
+REDIS_URL=redis://localhost:6379   # Redis connection URL
+REDIS_TTL_SECONDS=3600             # Cache TTL (1 hour default)
+REDIS_MAX_VALUE_SIZE_MB=10         # Skip caching values larger than this
+```
+
+### What Gets Cached in Redis
+
+- **Query results**: Search query card IDs (fastest lookup)
+- **Individual cards**: Frequently accessed cards by ID
+- **Autocomplete**: Name prefix results (10-minute TTL)
+
+### Fallback Behavior
+
+If Redis is unreachable, the service automatically falls back to PostgreSQL/SQLite without errors. This ensures high availability even if Redis goes down.
 
 ## Scaling Notes (Scale-Ready, Not Scaled)
 
@@ -63,6 +131,7 @@ When to scale further:
 - **Rust** - High-performance, memory-safe systems programming
 - **Axum** - Fast, ergonomic web framework
 - **PostgreSQL** / **SQLite** - Dual backend support via trait abstraction
+- **Redis** (optional) - In-memory cache for sub-5ms response times
 - **SQLx** / **rusqlite** - Async database drivers
 - **Governor** - Production-ready rate limiting
 - **Tokio** - Async runtime for concurrent operations

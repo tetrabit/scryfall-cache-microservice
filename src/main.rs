@@ -20,6 +20,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use api::handlers::AppStateInner;
 use api::routes::create_router;
 use cache::manager::CacheManager;
+use cache::redis::{RedisCache, RedisConfig};
 use config::Config;
 use scryfall::bulk_loader::BulkLoader;
 use scryfall::client::ScryfallClient;
@@ -100,6 +101,36 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Initialize Redis cache (if enabled)
+    let redis_cache = if let Some(redis_config) = &config.cache.redis {
+        info!("Redis cache is enabled, connecting to {}...", redis_config.url);
+
+        let redis_config_instance = RedisConfig {
+            url: redis_config.url.clone(),
+            ttl_seconds: redis_config.ttl_seconds,
+            max_value_size_mb: redis_config.max_value_size_mb,
+        };
+
+        match RedisCache::new(redis_config_instance).await {
+            Ok(redis) => {
+                redis
+                    .test_connection()
+                    .await
+                    .context("Failed to test Redis connection")?;
+                info!("Redis cache connected successfully");
+                Some(redis)
+            }
+            Err(e) => {
+                error!("Failed to connect to Redis: {}", e);
+                error!("Continuing without Redis cache");
+                None
+            }
+        }
+    } else {
+        info!("Redis cache is disabled");
+        None
+    };
+
     // Initialize Scryfall client
     let scryfall_client = ScryfallClient::new(&config.scryfall);
 
@@ -119,6 +150,7 @@ async fn main() -> Result<()> {
 
     // Initialize cache manager
     let cache_manager = CacheManager::new(
+        redis_cache,
         db.clone(),
         scryfall_client,
         config.cache.query_cache_ttl_hours as i32,

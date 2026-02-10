@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use tracing::{debug, info};
 use uuid::Uuid;
 
+use crate::cache::redis::RedisCache;
 use crate::db::Database;
 use crate::metrics::registry::{CACHE_HITS_TOTAL, CACHE_MISSES_TOTAL};
 use crate::models::card::Card;
@@ -11,6 +12,7 @@ use crate::scryfall::client::ScryfallClient;
 use crate::utils::hash::hash_query;
 
 pub struct CacheManager {
+    redis: Option<RedisCache>,
     db: Database,
     query_executor: QueryExecutor,
     scryfall_client: ScryfallClient,
@@ -18,10 +20,16 @@ pub struct CacheManager {
 }
 
 impl CacheManager {
-    pub fn new(db: Database, scryfall_client: ScryfallClient, query_cache_ttl_hours: i32) -> Self {
+    pub fn new(
+        redis: Option<RedisCache>,
+        db: Database,
+        scryfall_client: ScryfallClient,
+        query_cache_ttl_hours: i32,
+    ) -> Self {
         let query_executor = QueryExecutor::new(db.clone());
 
         Self {
+            redis,
             db,
             query_executor,
             scryfall_client,
@@ -33,36 +41,68 @@ impl CacheManager {
         self.db.test_connection().await
     }
 
+    pub async fn test_redis_connection(&self) -> Result<()> {
+        if let Some(redis) = &self.redis {
+            redis.test_connection().await
+        } else {
+            Ok(())
+        }
+    }
+
     /// Search for cards with caching
     pub async fn search(&self, query: &str, limit: Option<i64>) -> Result<Vec<Card>> {
         debug!("Cache search for query: {}", query);
 
-        // Generate query hash
+        // 1. Check Redis cache first (if enabled)
+        if let Some(redis) = &self.redis {
+            if let Ok(Some(card_ids)) = redis.get_query_results(query).await {
+                debug!("Redis cache hit for query: {} ({} IDs)", query, card_ids.len());
+
+                // Try to fetch cards from database
+                match self.db.get_cards_by_ids(&card_ids).await {
+                    Ok(cards) if !cards.is_empty() => {
+                        info!(
+                            "Returned {} cards from Redis cache for query: {}",
+                            cards.len(),
+                            query
+                        );
+                        return Ok(cards);
+                    }
+                    _ => {
+                        debug!("Redis had IDs but database fetch failed, falling back");
+                    }
+                }
+            }
+        }
+
+        // 2. Check database query cache
         let query_hash = hash_query(query);
-
-        // Check cache first
         if let Some((card_ids, _total)) = self.db.get_query_cache(&query_hash).await? {
-            debug!("Cache hit for query: {} ({} IDs)", query, card_ids.len());
+            debug!("Database query cache hit for query: {} ({} IDs)", query, card_ids.len());
 
-            // Try to fetch cards from cache, but fall back to direct query if it fails
+            // Try to fetch cards from database
             match self.db.get_cards_by_ids(&card_ids).await {
                 Ok(cards) if !cards.is_empty() => {
                     CACHE_HITS_TOTAL.with_label_values(&["query_cache"]).inc();
                     info!(
-                        "Returned {} cards from cache for query: {}",
+                        "Returned {} cards from database cache for query: {}",
                         cards.len(),
                         query
                     );
+
+                    // Store in Redis for faster access next time
+                    if let Some(redis) = &self.redis {
+                        redis.set_query_results(query, &card_ids).await.ok();
+                    }
+
                     return Ok(cards);
                 }
                 Err(e) => {
-                    // Cache fetch failed, fall through to direct database query
                     debug!("Cache fetch failed ({}), falling back to direct query", e);
                 }
                 _ => {}
             }
 
-            // Query cache entry existed but wasn't usable.
             CACHE_MISSES_TOTAL.with_label_values(&["query_cache"]).inc();
         } else {
             CACHE_MISSES_TOTAL.with_label_values(&["query_cache"]).inc();
@@ -70,7 +110,7 @@ impl CacheManager {
 
         debug!("Cache miss for query: {}", query);
 
-        // Try to execute query locally first
+        // 3. Try to execute query locally against database
         match self.query_executor.execute(query, limit).await {
             Ok(cards) if !cards.is_empty() => {
                 CACHE_HITS_TOTAL.with_label_values(&["database"]).inc();
@@ -80,12 +120,19 @@ impl CacheManager {
                     query
                 );
 
-                // Store in cache
+                // Store in both caches
                 let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
+
+                // Store in database query cache
                 self.db
                     .store_query_cache(&query_hash, &card_ids, self.query_cache_ttl_hours)
                     .await
                     .ok();
+
+                // Store in Redis cache
+                if let Some(redis) = &self.redis {
+                    redis.set_query_results(query, &card_ids).await.ok();
+                }
 
                 Ok(cards)
             }
@@ -105,12 +152,20 @@ impl CacheManager {
                     // Store cards in database
                     self.db.insert_cards_batch(&cards).await?;
 
-                    // Store in cache
+                    // Store in both caches
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
+
+                    // Store in database query cache
                     self.db
                         .store_query_cache(&query_hash, &card_ids, self.query_cache_ttl_hours)
                         .await
                         .ok();
+
+                    // Store in Redis cache
+                    if let Some(redis) = &self.redis {
+                        redis.set_query_results(query, &card_ids).await.ok();
+                        redis.set_cards(&cards).await.ok();
+                    }
 
                     info!(
                         "Returned {} cards from Scryfall API for query: {}",
@@ -135,12 +190,20 @@ impl CacheManager {
                     // Store cards in database
                     self.db.insert_cards_batch(&cards).await?;
 
-                    // Store in cache
+                    // Store in both caches
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
+
+                    // Store in database query cache
                     self.db
                         .store_query_cache(&query_hash, &card_ids, self.query_cache_ttl_hours)
                         .await
                         .ok();
+
+                    // Store in Redis cache
+                    if let Some(redis) = &self.redis {
+                        redis.set_query_results(query, &card_ids).await.ok();
+                        redis.set_cards(&cards).await.ok();
+                    }
 
                     info!(
                         "Returned {} cards from Scryfall API for query: {}",
@@ -263,21 +326,42 @@ impl CacheManager {
     pub async fn get_card(&self, id: Uuid) -> Result<Option<Card>> {
         debug!("Cache get card by ID: {}", id);
 
-        // Check local database first
+        // 1. Check Redis cache first (if enabled)
+        if let Some(redis) = &self.redis {
+            if let Ok(Some(card)) = redis.get_card(id).await {
+                debug!("Found card in Redis cache: {}", card.name);
+                return Ok(Some(card));
+            }
+        }
+
+        // 2. Check local database
         if let Ok(Some(card)) = self.db.get_card_by_id(id).await {
             CACHE_HITS_TOTAL.with_label_values(&["database"]).inc();
             debug!("Found card in local database: {}", card.name);
+
+            // Store in Redis for faster access next time
+            if let Some(redis) = &self.redis {
+                redis.set_card(&card).await.ok();
+            }
+
             return Ok(Some(card));
         }
 
         CACHE_MISSES_TOTAL.with_label_values(&["database"]).inc();
 
-        // Fall back to Scryfall API
+        // 3. Fall back to Scryfall API
         debug!("Card not in database, querying Scryfall API");
         if let Some(card) = self.scryfall_client.get_card_by_id(id).await? {
             CACHE_HITS_TOTAL.with_label_values(&["api"]).inc();
+
             // Store in database
             self.db.insert_cards_batch(&[card.clone()]).await?;
+
+            // Store in Redis cache
+            if let Some(redis) = &self.redis {
+                redis.set_card(&card).await.ok();
+            }
+
             info!("Fetched and cached card from Scryfall: {}", card.name);
             return Ok(Some(card));
         }
@@ -324,8 +408,21 @@ impl CacheManager {
             return Ok(Vec::new());
         }
 
-        // Query the database for matching card names
+        // 1. Check Redis cache first (if enabled)
+        if let Some(redis) = &self.redis {
+            if let Ok(Some(names)) = redis.get_autocomplete(prefix).await {
+                debug!("Autocomplete Redis cache hit for prefix '{}'", prefix);
+                return Ok(names);
+            }
+        }
+
+        // 2. Query the database for matching card names
         let names = self.db.autocomplete_card_names(prefix, 20).await?;
+
+        // Store in Redis for faster access next time
+        if let Some(redis) = &self.redis {
+            redis.set_autocomplete(prefix, &names).await.ok();
+        }
 
         info!(
             "Autocomplete returned {} names for prefix '{}'",
