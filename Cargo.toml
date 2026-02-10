@@ -12,7 +12,7 @@ sqlite = ["rusqlite", "r2d2", "r2d2_sqlite"]
 # Web framework
 axum = { version = "0.7", features = ["macros"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["trace", "cors", "compression-full"] }
+tower-http = { version = "0.5", features = ["trace", "cors", "compression-full", "fs"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }

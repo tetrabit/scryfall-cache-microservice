@@ -248,6 +248,36 @@ Response (example):
 
 You can set `INSTANCE_ID` (or rely on `HOSTNAME`) to help debug which instance served a request.
 
+## Admin Panel
+
+There is a lightweight React admin UI in `admin-panel/` that reads backend JSON endpoints and links out to `/metrics` and `/api-docs`.
+
+Dev:
+
+```bash
+cd admin-panel
+npm install
+npm run dev
+```
+
+Then open `http://localhost:5173/admin/` (the Vite app is configured with `base: /admin/`).
+
+Prod:
+
+```bash
+cd admin-panel
+npm ci
+npm run build
+```
+
+The backend serves the built assets from `admin-panel/dist` at `GET /admin`.
+
+Backend endpoints used by the UI:
+- `GET /api/admin/stats/overview`
+- `POST /admin/reload`
+
+Note: authentication for admin endpoints is not implemented yet; treat these as trusted-network only until API key auth exists.
+
 ### Search Cards
 
 Search for cards using Scryfall query syntax:

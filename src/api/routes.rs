@@ -6,14 +6,15 @@ use axum::{
 use tower_http::{
     compression::CompressionLayer,
     cors::{Any, CorsLayer},
+    services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use super::handlers::{
-    admin_reload, autocomplete_cards, get_card, get_card_by_name, get_stats, health, health_live,
-    health_ready, search_cards, AppState,
+    admin_reload, admin_stats_overview, autocomplete_cards, get_card, get_card_by_name, get_stats,
+    health, health_live, health_ready, search_cards, AppState,
 };
 use super::middleware::logging_middleware;
 use super::openapi::ApiDoc;
@@ -31,6 +32,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/health/live", get(health_live))
         .route("/health/ready", get(health_ready))
+        // Admin API endpoints (for web UI)
+        .route("/api/admin/stats/overview", get(admin_stats_overview))
         // Card search endpoints
         .route("/cards/search", get(search_cards))
         .route("/cards/named", get(get_card_by_name))
@@ -42,6 +45,13 @@ pub fn create_router(state: AppState) -> Router {
         .route("/metrics", get(metrics::metrics_handler))
         // Admin endpoints
         .route("/admin/reload", post(admin_reload))
+        // Admin panel (static files). Build the frontend into admin-panel/dist.
+        // Note: /admin/reload remains an API endpoint and should take precedence.
+        .nest_service(
+            "/admin",
+            ServeDir::new("admin-panel/dist")
+                .not_found_service(ServeFile::new("admin-panel/dist/index.html")),
+        )
         // OpenAPI documentation
         .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Add middleware (order matters: compression -> logging -> metrics -> cors -> trace)

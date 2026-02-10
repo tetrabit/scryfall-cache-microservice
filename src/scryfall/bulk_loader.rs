@@ -96,6 +96,10 @@ impl BulkLoader {
         Self { db, config }
     }
 
+    pub async fn last_import_timestamp(&self) -> Result<Option<chrono::NaiveDateTime>> {
+        self.db.get_last_bulk_import().await
+    }
+
     /// Check if bulk data should be loaded
     pub async fn should_load(&self) -> Result<bool> {
         // Check if database has any cards

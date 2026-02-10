@@ -90,6 +90,18 @@ async fn test_health_ready_endpoint() {
 }
 
 #[tokio::test]
+async fn test_admin_overview_endpoint() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(&mut app, "GET", "/api/admin/stats/overview").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert!(body["data"].is_object());
+    assert_eq!(body["data"]["service"], "scryfall-cache");
+    assert!(body["data"]["cards_total"].is_number());
+}
+
+#[tokio::test]
 async fn test_search_cards_basic() {
     let mut app = create_test_app().await;
     let (status, body) = send_json_request(&mut app, "GET", "/cards/search?q=c:r").await;

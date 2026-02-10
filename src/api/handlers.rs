@@ -29,6 +29,24 @@ pub struct AppStateInner {
     pub instance_id: String,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminOverview {
+    pub service: String,
+    pub version: String,
+    pub instance_id: String,
+    pub cards_total: i64,
+    pub cache_entries_total: i64,
+    pub bulk_last_import: Option<String>,
+    pub bulk_reload_recommended: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AdminOverviewResponse {
+    pub success: bool,
+    pub data: Option<AdminOverview>,
+    pub error: Option<crate::errors::response::ErrorDetail>,
+}
+
 /// Generic API response wrapper
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T> {
@@ -263,6 +281,60 @@ pub async fn health_ready(State(state): State<AppState>) -> impl IntoResponse {
             "checks": checks,
         })),
     )
+}
+
+/// Admin: overview stats for dashboard
+#[utoipa::path(
+    get,
+    path = "/api/admin/stats/overview",
+    tag = "admin",
+    responses(
+        (status = 200, description = "Admin overview stats", body = AdminOverviewResponse),
+        (status = 500, description = "Internal server error", body = AdminOverviewResponse)
+    )
+)]
+pub async fn admin_stats_overview(State(state): State<AppState>) -> impl IntoResponse {
+    let stats = match state.cache_manager.get_stats().await {
+        Ok(s) => s,
+        Err(e) => {
+            return ErrorResponse::database_error(format!("Failed to load stats: {}", e))
+                .into_response();
+        }
+    };
+
+    let bulk_last_import = match state.bulk_loader.last_import_timestamp().await {
+        Ok(ts) => ts.map(|t| t.to_string()),
+        Err(e) => {
+            return ErrorResponse::database_error(format!(
+                "Failed to load bulk import timestamp: {}",
+                e
+            ))
+            .into_response();
+        }
+    };
+
+    let bulk_reload_recommended = match state.bulk_loader.should_load().await {
+        Ok(v) => v,
+        Err(e) => {
+            return ErrorResponse::database_error(format!(
+                "Failed to determine bulk load status: {}",
+                e
+            ))
+            .into_response();
+        }
+    };
+
+    let overview = AdminOverview {
+        service: "scryfall-cache".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        instance_id: state.instance_id.clone(),
+        cards_total: stats.total_cards,
+        cache_entries_total: stats.total_cache_entries,
+        bulk_last_import,
+        bulk_reload_recommended,
+    };
+
+    (StatusCode::OK, Json(ApiResponse::success(overview))).into_response()
 }
 
 /// Search for cards
