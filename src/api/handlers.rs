@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
@@ -609,27 +610,47 @@ pub async fn batch_get_cards_by_name(
 
     let fuzzy = req.fuzzy.unwrap_or(true);
 
-    let mut results = Vec::with_capacity(req.names.len());
-    let mut not_found = Vec::new();
+    let parallelism: usize = std::env::var("BATCH_PARALLELISM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4)
+        .max(1)
+        .min(32);
 
-    for name in req.names {
-        match state.cache_manager.search_by_name(&name, fuzzy).await {
-            Ok(card_opt) => {
-                if card_opt.is_none() {
-                    not_found.push(name.clone());
-                }
-                results.push(BatchNamedResult {
+    let mut indexed: Vec<(usize, BatchNamedResult)> = futures::stream::iter(
+        req.names
+            .into_iter()
+            .enumerate()
+            .map(|(idx, name)| (idx, name)),
+    )
+    .map(|(idx, name)| {
+        let state = state.clone();
+        async move {
+            let res = match state.cache_manager.search_by_name(&name, fuzzy).await {
+                Ok(card_opt) => BatchNamedResult {
                     name,
                     card: card_opt,
-                });
-            }
-            Err(e) => {
-                error!("Batch named lookup failed for '{}': {}", name, e);
-                // Keep partial results; mark as not found.
-                not_found.push(name.clone());
-                results.push(BatchNamedResult { name, card: None });
-            }
+                },
+                Err(e) => {
+                    error!("Batch named lookup failed: {}", e);
+                    BatchNamedResult { name, card: None }
+                }
+            };
+            (idx, res)
         }
+    })
+    .buffer_unordered(parallelism)
+    .collect()
+    .await;
+
+    indexed.sort_by_key(|(idx, _)| *idx);
+    let mut results = Vec::with_capacity(indexed.len());
+    let mut not_found = Vec::new();
+    for (_idx, item) in indexed {
+        if item.card.is_none() {
+            not_found.push(item.name.clone());
+        }
+        results.push(item);
     }
 
     let data = BatchNamedData { results, not_found };
@@ -669,80 +690,105 @@ pub async fn batch_execute_queries(
         .into_response();
     }
 
-    let mut results = Vec::with_capacity(req.queries.len());
+    let parallelism: usize = std::env::var("BATCH_PARALLELISM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4)
+        .max(1)
+        .min(32);
 
-    for item in req.queries {
-        // Validate query string
-        if let Err(e) = state.query_validator.validate_query_string(&item.query) {
-            results.push(BatchQueryResult {
-                id: item.id,
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            });
-            continue;
-        }
+    let mut indexed: Vec<(usize, BatchQueryResult)> =
+        futures::stream::iter(req.queries.into_iter().enumerate())
+            .map(|(idx, item)| {
+                let state = state.clone();
+                async move {
+                    let id = item.id;
+                    let query = item.query;
 
-        // Parse and validate query AST
-        match QueryParser::parse(&item.query) {
-            Ok(ast) => {
-                if let Err(e) = state.query_validator.validate_ast(&ast) {
-                    results.push(BatchQueryResult {
-                        id: item.id,
-                        success: false,
-                        data: None,
-                        error: Some(e.to_string()),
-                    });
-                    continue;
+                    // Validate query string
+                    if let Err(e) = state.query_validator.validate_query_string(&query) {
+                        return (
+                            idx,
+                            BatchQueryResult {
+                                id,
+                                success: false,
+                                data: None,
+                                error: Some(e.to_string()),
+                            },
+                        );
+                    }
+
+                    // Parse and validate query AST
+                    match QueryParser::parse(&query) {
+                        Ok(ast) => {
+                            if let Err(e) = state.query_validator.validate_ast(&ast) {
+                                return (
+                                    idx,
+                                    BatchQueryResult {
+                                        id,
+                                        success: false,
+                                        data: None,
+                                        error: Some(e.to_string()),
+                                    },
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            return (
+                                idx,
+                                BatchQueryResult {
+                                    id,
+                                    success: false,
+                                    data: None,
+                                    error: Some(format!("Query parse error: {}", e)),
+                                },
+                            );
+                        }
+                    }
+
+                    let page = item.page.unwrap_or(1).max(1);
+                    let page_size = item.page_size.unwrap_or(100).min(1000).max(1);
+
+                    match state.cache_manager.search_paginated(&query, page, page_size).await {
+                        Ok((cards, total)) => {
+                            let total_pages = total.div_ceil(page_size);
+                            let has_more = page < total_pages;
+                            let data = PaginatedResponse {
+                                data: cards,
+                                total,
+                                page,
+                                page_size,
+                                total_pages,
+                                has_more,
+                            };
+                            (
+                                idx,
+                                BatchQueryResult {
+                                    id,
+                                    success: true,
+                                    data: Some(data),
+                                    error: None,
+                                },
+                            )
+                        }
+                        Err(e) => (
+                            idx,
+                            BatchQueryResult {
+                                id,
+                                success: false,
+                                data: None,
+                                error: Some(e.to_string()),
+                            },
+                        ),
+                    }
                 }
-            }
-            Err(e) => {
-                results.push(BatchQueryResult {
-                    id: item.id,
-                    success: false,
-                    data: None,
-                    error: Some(format!("Query parse error: {}", e)),
-                });
-                continue;
-            }
-        }
+            })
+            .buffer_unordered(parallelism)
+            .collect()
+            .await;
 
-        let page = item.page.unwrap_or(1).max(1);
-        let page_size = item.page_size.unwrap_or(100).min(1000).max(1);
-
-        match state
-            .cache_manager
-            .search_paginated(&item.query, page, page_size)
-            .await
-        {
-            Ok((cards, total)) => {
-                let total_pages = total.div_ceil(page_size);
-                let has_more = page < total_pages;
-                let data = PaginatedResponse {
-                    data: cards,
-                    total,
-                    page,
-                    page_size,
-                    total_pages,
-                    has_more,
-                };
-                results.push(BatchQueryResult {
-                    id: item.id,
-                    success: true,
-                    data: Some(data),
-                    error: None,
-                });
-            }
-            Err(e) => {
-                results.push(BatchQueryResult {
-                    id: item.id,
-                    success: false,
-                    data: None,
-                    error: Some(e.to_string()),
-                });
-            }
-        }
-    }
+    indexed.sort_by_key(|(idx, _)| *idx);
+    let results: Vec<BatchQueryResult> = indexed.into_iter().map(|(_i, r)| r).collect();
 
     let data = BatchQueriesData { results };
     (StatusCode::OK, Json(ApiResponse::success(data))).into_response()

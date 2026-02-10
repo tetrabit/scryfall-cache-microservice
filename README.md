@@ -421,6 +421,8 @@ curl -X POST "http://localhost:8080/queries/batch" \
 
 Set `BATCH_MAX_QUERIES` to limit the maximum number of queries accepted (default: 10).
 
+You can set `BATCH_PARALLELISM` to control how many batch items are processed concurrently (default: 4).
+
 ### Get Card by Name
 
 ```bash
