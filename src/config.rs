@@ -41,16 +41,14 @@ impl Config {
 
         Ok(Config {
             database: DatabaseConfig {
-                url: env::var("DATABASE_URL")
-                    .context("DATABASE_URL must be set")?,
+                url: env::var("DATABASE_URL").context("DATABASE_URL must be set")?,
                 max_connections: env::var("DATABASE_MAX_CONNECTIONS")
                     .unwrap_or_else(|_| "10".to_string())
                     .parse()
                     .context("DATABASE_MAX_CONNECTIONS must be a valid number")?,
             },
             server: ServerConfig {
-                host: env::var("API_HOST")
-                    .unwrap_or_else(|_| "0.0.0.0".to_string()),
+                host: env::var("API_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
                 port: env::var("API_PORT")
                     .unwrap_or_else(|_| "8080".to_string())
                     .parse()

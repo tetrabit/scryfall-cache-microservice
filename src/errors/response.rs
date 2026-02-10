@@ -153,4 +153,75 @@ mod tests {
         assert_eq!(err.error.code, ErrorCode::CardNotFound);
         assert!(err.error.message.contains("abc123"));
     }
+
+    // ========== HTTP STATUS CODE TESTS ==========
+
+    #[test]
+    fn test_error_code_status_codes() {
+        // Test all ErrorCode variants map to correct HTTP status codes
+        assert_eq!(ErrorCode::InvalidQuery.status_code(), 400);
+        assert_eq!(ErrorCode::ValidationError.status_code(), 400);
+        assert_eq!(ErrorCode::InvalidApiKey.status_code(), 401);
+        assert_eq!(ErrorCode::CardNotFound.status_code(), 404);
+        assert_eq!(ErrorCode::RateLimitExceeded.status_code(), 429);
+        assert_eq!(ErrorCode::InternalError.status_code(), 500);
+        assert_eq!(ErrorCode::ScryfallApiError.status_code(), 502);
+        assert_eq!(ErrorCode::DatabaseError.status_code(), 503);
+    }
+
+    #[test]
+    fn test_into_response_status_invalid_query() {
+        let error = ErrorResponse::invalid_query("Bad query");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_into_response_status_validation_error() {
+        let error = ErrorResponse::validation_error("Invalid input");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_into_response_status_unauthorized() {
+        let error = ErrorResponse::new(ErrorCode::InvalidApiKey, "Invalid API key");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn test_into_response_status_not_found() {
+        let error = ErrorResponse::card_not_found("abc123");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn test_into_response_status_rate_limit() {
+        let error = ErrorResponse::new(ErrorCode::RateLimitExceeded, "Rate limit exceeded");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[test]
+    fn test_into_response_status_internal_error() {
+        let error = ErrorResponse::internal_error("Something went wrong");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_into_response_status_bad_gateway() {
+        let error = ErrorResponse::new(ErrorCode::ScryfallApiError, "Scryfall API failed");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+    }
+
+    #[test]
+    fn test_into_response_status_service_unavailable() {
+        let error = ErrorResponse::database_error("Database connection failed");
+        let response = error.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    }
 }
