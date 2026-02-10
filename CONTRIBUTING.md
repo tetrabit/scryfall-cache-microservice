@@ -77,7 +77,9 @@ We love feature suggestions! Please:
 1. Check existing PRs to avoid duplicate work
 2. For large changes, create an issue first to discuss
 3. Fork the repository
-4. Create a feature branch from `main`
+4. Create a feature branch from `master`
+
+If you are working in this repo with `td` task tracking, prefer linking work to a `td-...` issue ID and using the `td review` / `td approve` workflow.
 
 #### Development Process
 
@@ -106,7 +108,7 @@ git checkout -b feature/your-feature-name
 cargo test
 
 # Run clippy
-cargo clippy -- -D warnings
+cargo clippy --all-targets --all-features
 
 # Format code
 cargo fmt
@@ -117,6 +119,15 @@ cargo build --release
 # Test with Docker
 docker-compose up -d
 curl http://localhost:8080/health
+```
+
+If you change the admin UI, also run:
+
+```bash
+cd admin-panel
+npm install
+npm run lint
+npm run build
 ```
 
 4. **Commit your changes**
@@ -195,7 +206,13 @@ cargo fmt
 
 **Use clippy:**
 ```bash
-cargo clippy -- -D warnings
+cargo clippy --all-targets --all-features
+```
+
+If you want a stricter local check and have eliminated warnings in your build, you can run:
+
+```bash
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 **Naming conventions:**
