@@ -1,0 +1,60 @@
+# Cargo deny configuration for dependency security and licensing
+# https://github.com/EmbarkStudios/cargo-deny
+
+[advisories]
+# Database advisory configuration
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Deny vulnerabilities
+vulnerability = "deny"
+# Warn on unmaintained dependencies
+unmaintained = "warn"
+# Warn on notice advisories (informational)
+notice = "warn"
+# Ignore specific advisories (use sparingly)
+ignore = []
+
+[licenses]
+# Deny dependencies with no license
+unlicensed = "deny"
+# Allow specific licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "CC0-1.0",
+    "0BSD",
+    "Unlicense",
+]
+# Deny copyleft licenses to avoid compliance issues
+deny = [
+    "GPL-3.0",
+    "AGPL-3.0",
+]
+# Confidence threshold for license detection
+confidence-threshold = 0.8
+# Check private/unpublished dependencies
+copyleft = "warn"
+
+[bans]
+# Warn if multiple versions of same dependency exist
+multiple-versions = "warn"
+# Allow multiple versions in some cases (major version bumps)
+wildcards = "allow"
+# Deny specific dependencies
+deny = []
+# Skip checking these dependencies
+skip = []
+# Allow these dependencies even if they would be denied
+allow = []
+
+[sources]
+# Deny dependencies from unknown registries
+unknown-registry = "deny"
+unknown-git = "deny"
+# Allow crates.io
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Allow specific git sources if needed
+allow-git = []
