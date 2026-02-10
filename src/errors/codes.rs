@@ -9,31 +9,31 @@ pub enum ErrorCode {
     /// Query syntax error
     #[serde(rename = "INVALID_QUERY")]
     InvalidQuery,
-    
+
     /// Card ID not found
     #[serde(rename = "CARD_NOT_FOUND")]
     CardNotFound,
-    
+
     /// Too many requests / rate limit exceeded
     #[serde(rename = "RATE_LIMIT_EXCEEDED")]
     RateLimitExceeded,
-    
+
     /// Database connection or query error
     #[serde(rename = "DATABASE_ERROR")]
     DatabaseError,
-    
+
     /// Upstream Scryfall API failure
     #[serde(rename = "SCRYFALL_API_ERROR")]
     ScryfallApiError,
-    
+
     /// Authentication failed
     #[serde(rename = "INVALID_API_KEY")]
     InvalidApiKey,
-    
+
     /// Input validation failed
     #[serde(rename = "VALIDATION_ERROR")]
     ValidationError,
-    
+
     /// Internal server error
     #[serde(rename = "INTERNAL_ERROR")]
     InternalError,

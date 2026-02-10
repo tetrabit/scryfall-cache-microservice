@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -11,7 +7,7 @@ use uuid::Uuid;
 pub async fn logging_middleware(request: Request, next: Next) -> Response {
     let start = Instant::now();
     let request_id = Uuid::new_v4().to_string();
-    
+
     // Extract request information
     let method = request.method().to_string();
     let uri = request.uri().to_string();
@@ -36,11 +32,11 @@ pub async fn logging_middleware(request: Request, next: Next) -> Response {
 
     // Process request
     let response = next.run(request).await;
-    
+
     // Calculate duration
     let duration = start.elapsed();
     let status = response.status();
-    
+
     // Log response
     if status.is_success() {
         info!(
@@ -79,7 +75,7 @@ fn sanitize_query(query: &str) -> String {
     if query.is_empty() {
         return String::new();
     }
-    
+
     // Replace potential API keys or tokens with regex-like approach
     let mut result = query.to_string();
     for (key, replacement) in [
@@ -99,7 +95,7 @@ fn sanitize_query(query: &str) -> String {
             result.replace_range(start..value_end, replacement);
         }
     }
-    
+
     result
 }
 

@@ -25,6 +25,10 @@ impl CacheManager {
         }
     }
 
+    pub async fn test_database_connection(&self) -> Result<()> {
+        self.db.test_connection().await
+    }
+
     /// Search for cards with caching
     pub async fn search(&self, query: &str, limit: Option<i64>) -> Result<Vec<Card>> {
         debug!("Cache search for query: {}", query);
@@ -39,7 +43,11 @@ impl CacheManager {
             // Try to fetch cards from cache, but fall back to direct query if it fails
             match self.db.get_cards_by_ids(&card_ids).await {
                 Ok(cards) if !cards.is_empty() => {
-                    info!("Returned {} cards from cache for query: {}", cards.len(), query);
+                    info!(
+                        "Returned {} cards from cache for query: {}",
+                        cards.len(),
+                        query
+                    );
                     return Ok(cards);
                 }
                 Err(e) => {
@@ -55,11 +63,16 @@ impl CacheManager {
         // Try to execute query locally first
         match self.query_executor.execute(query, limit).await {
             Ok(cards) if !cards.is_empty() => {
-                info!("Returned {} cards from local database for query: {}", cards.len(), query);
+                info!(
+                    "Returned {} cards from local database for query: {}",
+                    cards.len(),
+                    query
+                );
 
                 // Store in cache
                 let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
-                self.db.store_query_cache(&query_hash, &card_ids, 24)
+                self.db
+                    .store_query_cache(&query_hash, &card_ids, 24)
                     .await
                     .ok();
 
@@ -67,7 +80,11 @@ impl CacheManager {
             }
             Ok(cards) => {
                 // Query succeeded but returned no results
-                debug!("Query executor returned {} cards for query: {}", cards.len(), query);
+                debug!(
+                    "Query executor returned {} cards for query: {}",
+                    cards.len(),
+                    query
+                );
                 info!("Querying Scryfall API for: {}", query);
                 let cards = self.scryfall_client.search_cards(query).await?;
 
@@ -77,11 +94,16 @@ impl CacheManager {
 
                     // Store in cache
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
-                    self.db.store_query_cache(&query_hash, &card_ids, 24)
+                    self.db
+                        .store_query_cache(&query_hash, &card_ids, 24)
                         .await
                         .ok();
 
-                    info!("Returned {} cards from Scryfall API for query: {}", cards.len(), query);
+                    info!(
+                        "Returned {} cards from Scryfall API for query: {}",
+                        cards.len(),
+                        query
+                    );
                 }
 
                 Ok(cards)
@@ -98,11 +120,16 @@ impl CacheManager {
 
                     // Store in cache
                     let card_ids: Vec<Uuid> = cards.iter().map(|c| c.id).collect();
-                    self.db.store_query_cache(&query_hash, &card_ids, 24)
+                    self.db
+                        .store_query_cache(&query_hash, &card_ids, 24)
                         .await
                         .ok();
 
-                    info!("Returned {} cards from Scryfall API for query: {}", cards.len(), query);
+                    info!(
+                        "Returned {} cards from Scryfall API for query: {}",
+                        cards.len(),
+                        query
+                    );
                 }
 
                 Ok(cards)
@@ -117,17 +144,29 @@ impl CacheManager {
         page: usize,
         page_size: usize,
     ) -> Result<(Vec<Card>, usize)> {
-        debug!("Cache paginated search for query: {} (page {}, page_size {})", query, page, page_size);
+        debug!(
+            "Cache paginated search for query: {} (page {}, page_size {})",
+            query, page, page_size
+        );
 
         // For paginated queries, we can't rely on query_cache as easily
         // since it stores all card IDs but pagination happens at query level
         // Instead, we directly use the paginated query executor
 
-        match self.query_executor.execute_paginated(query, page, page_size).await {
+        match self
+            .query_executor
+            .execute_paginated(query, page, page_size)
+            .await
+        {
             Ok((cards, total)) => {
                 if !cards.is_empty() || total > 0 {
-                    info!("Returned {} cards from local database for query: {} (page {}/{})", 
-                          cards.len(), query, page, total.div_ceil(page_size));
+                    info!(
+                        "Returned {} cards from local database for query: {} (page {}/{})",
+                        cards.len(),
+                        query,
+                        page,
+                        total.div_ceil(page_size)
+                    );
                     Ok((cards, total))
                 } else {
                     // Query returned no results - fall back to Scryfall API
@@ -138,7 +177,11 @@ impl CacheManager {
                     if !cards.is_empty() {
                         // Store cards in database
                         self.db.insert_cards_batch(&cards).await?;
-                        info!("Stored {} cards from Scryfall API for query: {}", cards.len(), query);
+                        info!(
+                            "Stored {} cards from Scryfall API for query: {}",
+                            cards.len(),
+                            query
+                        );
                     }
 
                     // For Scryfall API fallback, apply pagination in-memory
@@ -165,7 +208,11 @@ impl CacheManager {
                 if !cards.is_empty() {
                     // Store cards in database
                     self.db.insert_cards_batch(&cards).await?;
-                    info!("Stored {} cards from Scryfall API for query: {}", cards.len(), query);
+                    info!(
+                        "Stored {} cards from Scryfall API for query: {}",
+                        cards.len(),
+                        query
+                    );
                 }
 
                 // Apply pagination in-memory
@@ -233,7 +280,7 @@ impl CacheManager {
     /// Returns up to 20 card names that start with the given prefix
     pub async fn autocomplete(&self, prefix: &str) -> Result<Vec<String>> {
         debug!("Autocomplete request: prefix='{}'", prefix);
-        
+
         if prefix.len() < 2 {
             // Don't autocomplete for very short queries to avoid returning too many results
             return Ok(Vec::new());
@@ -241,8 +288,12 @@ impl CacheManager {
 
         // Query the database for matching card names
         let names = self.db.autocomplete_card_names(prefix, 20).await?;
-        
-        info!("Autocomplete returned {} names for prefix '{}'", names.len(), prefix);
+
+        info!(
+            "Autocomplete returned {} names for prefix '{}'",
+            names.len(),
+            prefix
+        );
         Ok(names)
     }
 

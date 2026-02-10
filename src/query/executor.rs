@@ -19,8 +19,7 @@ impl QueryExecutor {
         debug!("Executing query: {}", query);
 
         // Parse the query
-        let ast = QueryParser::parse(query)
-            .context("Failed to parse query")?;
+        let ast = QueryParser::parse(query).context("Failed to parse query")?;
 
         // Build SQL WHERE clause
         let (where_clause, params) = self.build_where_clause(&ast)?;
@@ -37,16 +36,16 @@ impl QueryExecutor {
             (sql, params_with_limit)
         } else {
             // No limit - return all matching cards
-            let sql = format!(
-                "SELECT * FROM cards WHERE {} ORDER BY name",
-                where_clause
-            );
+            let sql = format!("SELECT * FROM cards WHERE {} ORDER BY name", where_clause);
             (sql, params)
         };
 
         debug!("Generated SQL: {}", sql);
 
-        let cards = self.db.execute_raw_query(&sql, &final_params).await
+        let cards = self
+            .db
+            .execute_raw_query(&sql, &final_params)
+            .await
             .map_err(|e| {
                 tracing::error!("Database query failed: {:?}", e);
                 anyhow::anyhow!("Failed to execute query: {}", e)
@@ -61,26 +60,21 @@ impl QueryExecutor {
         debug!("Counting matches for query: {}", query);
 
         // Parse the query
-        let ast = QueryParser::parse(query)
-            .context("Failed to parse query")?;
+        let ast = QueryParser::parse(query).context("Failed to parse query")?;
 
         // Build SQL WHERE clause
         let (where_clause, params) = self.build_where_clause(&ast)?;
 
         // Build COUNT query
-        let sql = format!(
-            "SELECT COUNT(*) FROM cards WHERE {}",
-            where_clause
-        );
+        let sql = format!("SELECT COUNT(*) FROM cards WHERE {}", where_clause);
 
         debug!("Generated COUNT SQL: {}", sql);
 
         // Execute count query
-        let count = self.db.count_query(&sql, &params).await
-            .map_err(|e| {
-                tracing::error!("Count query failed: {:?}", e);
-                anyhow::anyhow!("Failed to count matches: {}", e)
-            })?;
+        let count = self.db.count_query(&sql, &params).await.map_err(|e| {
+            tracing::error!("Count query failed: {:?}", e);
+            anyhow::anyhow!("Failed to count matches: {}", e)
+        })?;
 
         debug!("Query matched {} cards", count);
         Ok(count)
@@ -93,21 +87,23 @@ impl QueryExecutor {
         page: usize,
         page_size: usize,
     ) -> Result<(Vec<Card>, usize)> {
-        debug!("Executing paginated query: query='{}', page={}, page_size={}", query, page, page_size);
+        debug!(
+            "Executing paginated query: query='{}', page={}, page_size={}",
+            query, page, page_size
+        );
 
         // Parse the query
-        let ast = QueryParser::parse(query)
-            .context("Failed to parse query")?;
+        let ast = QueryParser::parse(query).context("Failed to parse query")?;
 
         // Build SQL WHERE clause
         let (where_clause, params) = self.build_where_clause(&ast)?;
 
         // First, get total count (fast - no data transfer)
-        let count_sql = format!(
-            "SELECT COUNT(*) FROM cards WHERE {}",
-            where_clause
-        );
-        let total = self.db.count_query(&count_sql, &params).await
+        let count_sql = format!("SELECT COUNT(*) FROM cards WHERE {}", where_clause);
+        let total = self
+            .db
+            .count_query(&count_sql, &params)
+            .await
             .context("Failed to count total matches")?;
 
         // Calculate offset
@@ -116,24 +112,31 @@ impl QueryExecutor {
         // Build paginated query with LIMIT and OFFSET
         let sql = format!(
             "SELECT * FROM cards WHERE {} ORDER BY name LIMIT {} OFFSET {}",
-            where_clause,
-            page_size,
-            offset
+            where_clause, page_size, offset
         );
 
         debug!("Generated paginated SQL: {}", sql);
-        debug!("Total matches: {}, fetching page {} ({} cards starting at offset {})", 
-               total, page, page_size, offset);
+        debug!(
+            "Total matches: {}, fetching page {} ({} cards starting at offset {})",
+            total, page, page_size, offset
+        );
 
         // Execute query for only the requested page
-        let cards = self.db.execute_raw_query(&sql, &params).await
+        let cards = self
+            .db
+            .execute_raw_query(&sql, &params)
+            .await
             .map_err(|e| {
                 tracing::error!("Paginated query failed: {:?}", e);
                 anyhow::anyhow!("Failed to execute paginated query: {}", e)
             })?;
 
-        debug!("Query returned {} cards (page {} of {})", 
-               cards.len(), page, total.div_ceil(page_size));
+        debug!(
+            "Query returned {} cards (page {} of {})",
+            cards.len(),
+            page,
+            total.div_ceil(page_size)
+        );
 
         Ok((cards, total))
     }
@@ -145,7 +148,11 @@ impl QueryExecutor {
         Ok((clause, params))
     }
 
-    fn build_where_clause_inner(&self, node: &QueryNode, params: &mut Vec<String>) -> Result<String> {
+    fn build_where_clause_inner(
+        &self,
+        node: &QueryNode,
+        params: &mut Vec<String>,
+    ) -> Result<String> {
         match node {
             QueryNode::And(nodes) => {
                 let clauses: Result<Vec<String>> = nodes
@@ -185,9 +192,7 @@ impl QueryExecutor {
                 params.push(filter.value.clone());
                 Ok(self.build_text_search("type_line", param_index, &filter.operator))
             }
-            "color" | "c" => {
-                self.build_color_clause(&filter.value, &filter.operator, params)
-            }
+            "color" | "c" => self.build_color_clause(&filter.value, &filter.operator, params),
             "color_identity" | "id" | "identity" => {
                 self.build_color_identity_clause(&filter.value, &filter.operator, params)
             }
@@ -209,11 +214,21 @@ impl QueryExecutor {
             }
             "toughness" | "tou" => {
                 params.push(filter.value.clone());
-                Ok(self.build_numeric_comparison("toughness::numeric", param_index, &filter.operator))
+                Ok(self.build_numeric_comparison(
+                    "toughness::numeric",
+                    param_index,
+                    &filter.operator,
+                ))
             }
             "loyalty" | "loy" => {
                 params.push(filter.value.clone());
-                Ok(self.build_numeric_comparison("loyalty::numeric", param_index, &filter.operator))
+                Ok(
+                    self.build_numeric_comparison(
+                        "loyalty::numeric",
+                        param_index,
+                        &filter.operator,
+                    ),
+                )
             }
             _ => {
                 // Default: treat as name search
@@ -235,7 +250,12 @@ impl QueryExecutor {
         }
     }
 
-    fn build_numeric_comparison(&self, field: &str, param_index: usize, operator: &Operator) -> String {
+    fn build_numeric_comparison(
+        &self,
+        field: &str,
+        param_index: usize,
+        operator: &Operator,
+    ) -> String {
         let op = match operator {
             Operator::Equal | Operator::Contains => "=",
             Operator::NotEqual => "!=",
@@ -249,7 +269,12 @@ impl QueryExecutor {
         format!("{} {} ${}::numeric", field, op, param_index)
     }
 
-    fn build_color_clause(&self, value: &str, operator: &Operator, params: &mut Vec<String>) -> Result<String> {
+    fn build_color_clause(
+        &self,
+        value: &str,
+        operator: &Operator,
+        params: &mut Vec<String>,
+    ) -> Result<String> {
         let param_index = params.len() + 1;
 
         // Parse color codes (w, u, b, r, g, c for colorless)
@@ -278,17 +303,18 @@ impl QueryExecutor {
         params.push(colors[0].clone());
 
         match operator {
-            Operator::Equal | Operator::Contains => {
-                Ok(format!("${} = ANY(colors)", param_index))
-            }
-            Operator::NotEqual => {
-                Ok(format!("NOT (${} = ANY(colors))", param_index))
-            }
+            Operator::Equal | Operator::Contains => Ok(format!("${} = ANY(colors)", param_index)),
+            Operator::NotEqual => Ok(format!("NOT (${} = ANY(colors))", param_index)),
             _ => Ok(format!("${} = ANY(colors)", param_index)),
         }
     }
 
-    fn build_color_identity_clause(&self, value: &str, operator: &Operator, params: &mut Vec<String>) -> Result<String> {
+    fn build_color_identity_clause(
+        &self,
+        value: &str,
+        operator: &Operator,
+        params: &mut Vec<String>,
+    ) -> Result<String> {
         let param_index = params.len() + 1;
 
         // Parse color codes
@@ -320,9 +346,7 @@ impl QueryExecutor {
             Operator::Equal | Operator::Contains => {
                 Ok(format!("${} = ANY(color_identity)", param_index))
             }
-            Operator::NotEqual => {
-                Ok(format!("NOT (${} = ANY(color_identity))", param_index))
-            }
+            Operator::NotEqual => Ok(format!("NOT (${} = ANY(color_identity))", param_index)),
             _ => Ok(format!("${} = ANY(color_identity)", param_index)),
         }
     }
@@ -331,6 +355,103 @@ impl QueryExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::any::Any;
+    use uuid::Uuid;
+
+    #[derive(Debug)]
+    struct TestDb;
+
+    #[async_trait]
+    impl crate::db::DatabaseBackend for TestDb {
+        async fn insert_cards_batch(&self, _cards: &[Card]) -> anyhow::Result<()> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn get_card_by_id(&self, _id: Uuid) -> anyhow::Result<Option<Card>> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn get_cards_by_ids(&self, _ids: &[Uuid]) -> anyhow::Result<Vec<Card>> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn search_cards_by_name(
+            &self,
+            _name: &str,
+            _limit: i64,
+        ) -> anyhow::Result<Vec<Card>> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn autocomplete_card_names(
+            &self,
+            _prefix: &str,
+            _limit: i64,
+        ) -> anyhow::Result<Vec<String>> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn store_query_cache(
+            &self,
+            _query_hash: &str,
+            _card_ids: &[Uuid],
+            _ttl_hours: i32,
+        ) -> anyhow::Result<()> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn get_query_cache(
+            &self,
+            _query_hash: &str,
+        ) -> anyhow::Result<Option<(Vec<Uuid>, i32)>> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn record_bulk_import(&self, _total_cards: i32, _source: &str) -> anyhow::Result<()> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn clean_old_cache_entries(&self, _hours: i32) -> anyhow::Result<u64> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn test_connection(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn execute_raw_query(
+            &self,
+            _sql: &str,
+            _params: &[String],
+        ) -> anyhow::Result<Vec<Card>> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn count_query(&self, _sql: &str, _params: &[String]) -> anyhow::Result<usize> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn check_bulk_data_loaded(&self) -> anyhow::Result<bool> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn get_last_bulk_import(&self) -> anyhow::Result<Option<chrono::NaiveDateTime>> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn get_card_count(&self) -> anyhow::Result<i64> {
+            anyhow::bail!("not implemented")
+        }
+
+        async fn get_cache_entry_count(&self) -> anyhow::Result<i64> {
+            anyhow::bail!("not implemented")
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
 
     #[test]
     fn test_build_filter_clause() {
@@ -342,20 +463,11 @@ mod tests {
 
         // This test only checks the WHERE clause building logic,
         // which doesn't require a database connection
-        let mock_db = std::sync::Arc::new(
-            crate::db::postgres::PostgresBackend::new(
-                sqlx::postgres::PgPoolOptions::new()
-                    .max_connections(1)
-                    .connect_lazy("postgresql://test@localhost/test")
-                    .expect("failed to create lazy pg pool for tests")
-            )
-        ) as crate::db::Database;
-        
+        let mock_db = std::sync::Arc::new(TestDb) as crate::db::Database;
+
         let executor = QueryExecutor::new(mock_db);
         let mut params = Vec::new();
-        let clause = executor
-            .build_filter_clause(&filter, &mut params)
-            .unwrap();
+        let clause = executor.build_filter_clause(&filter, &mut params).unwrap();
 
         assert!(clause.contains("to_tsvector"));
         assert_eq!(params.len(), 1);

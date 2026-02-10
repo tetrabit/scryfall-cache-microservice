@@ -19,6 +19,7 @@ pub struct DatabaseConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    pub instance_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +54,11 @@ impl Config {
                     .unwrap_or_else(|_| "8080".to_string())
                     .parse()
                     .context("API_PORT must be a valid port number")?,
+                // Used only for debugging/observability. If unset, fall back to HOSTNAME if
+                // present (e.g. Docker/Kubernetes), otherwise "unknown".
+                instance_id: env::var("INSTANCE_ID")
+                    .or_else(|_| env::var("HOSTNAME"))
+                    .unwrap_or_else(|_| "unknown".to_string()),
             },
             scryfall: ScryfallConfig {
                 rate_limit_per_second: env::var("SCRYFALL_RATE_LIMIT_PER_SECOND")
@@ -98,6 +104,7 @@ mod tests {
             server: ServerConfig {
                 host: "127.0.0.1".to_string(),
                 port: 3000,
+                instance_id: "test-instance".to_string(),
             },
             scryfall: ScryfallConfig {
                 rate_limit_per_second: 10,

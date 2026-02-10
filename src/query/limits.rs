@@ -5,16 +5,16 @@ use serde::{Deserialize, Serialize};
 pub struct QueryLimits {
     /// Maximum query string length (characters)
     pub max_query_length: usize,
-    
+
     /// Maximum nesting depth for boolean expressions
     pub max_nesting_depth: usize,
-    
+
     /// Maximum number of OR clauses
     pub max_or_clauses: usize,
-    
+
     /// Maximum number of results to return
     pub max_results: i64,
-    
+
     /// Query execution timeout (seconds)
     pub query_timeout_seconds: u64,
 }

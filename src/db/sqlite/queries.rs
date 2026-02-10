@@ -15,22 +15,36 @@ pub fn insert_cards_batch(pool: &SqlitePool, cards: &[Card]) -> Result<()> {
     let tx = conn.transaction().context("Failed to begin transaction")?;
 
     for card in cards {
-        let colors_json = card.colors.as_ref()
+        let colors_json = card
+            .colors
+            .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_default());
-        let color_identity_json = card.color_identity.as_ref()
+        let color_identity_json = card
+            .color_identity
+            .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_default());
-        let keywords_json = card.keywords.as_ref()
+        let keywords_json = card
+            .keywords
+            .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_default());
-        let prices_json = card.prices.as_ref()
+        let prices_json = card
+            .prices
+            .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_default());
-        let image_uris_json = card.image_uris.as_ref()
+        let image_uris_json = card
+            .image_uris
+            .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_default());
-        let card_faces_json = card.card_faces.as_ref()
+        let card_faces_json = card
+            .card_faces
+            .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_default());
-        let legalities_json = card.legalities.as_ref()
+        let legalities_json = card
+            .legalities
+            .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_default());
-        let raw_json = serde_json::to_string(&card.raw_json)
-            .context("Failed to serialize raw_json")?;
+        let raw_json =
+            serde_json::to_string(&card.raw_json).context("Failed to serialize raw_json")?;
 
         tx.execute(
             r#"
@@ -93,7 +107,8 @@ pub fn insert_cards_batch(pool: &SqlitePool, cards: &[Card]) -> Result<()> {
                 card.released_at.map(|d| d.to_string()),
                 raw_json,
             ],
-        ).context("Failed to insert card")?;
+        )
+        .context("Failed to insert card")?;
     }
 
     tx.commit().context("Failed to commit transaction")?;
@@ -103,12 +118,15 @@ pub fn insert_cards_batch(pool: &SqlitePool, cards: &[Card]) -> Result<()> {
 /// Get a card by ID
 pub fn get_card_by_id(pool: &SqlitePool, id: Uuid) -> Result<Option<Card>> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
-    let card = conn.query_row(
-        "SELECT * FROM cards WHERE id = ?1",
-        params![id.to_string()],
-        row_to_card,
-    ).optional().context("Failed to fetch card by ID")?;
+
+    let card = conn
+        .query_row(
+            "SELECT * FROM cards WHERE id = ?1",
+            params![id.to_string()],
+            row_to_card,
+        )
+        .optional()
+        .context("Failed to fetch card by ID")?;
 
     Ok(card)
 }
@@ -122,14 +140,18 @@ pub fn get_cards_by_ids(pool: &SqlitePool, ids: &[Uuid]) -> Result<Vec<Card>> {
     let conn = pool.get().context("Failed to get connection from pool")?;
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let query = format!("SELECT * FROM cards WHERE id IN ({})", placeholders);
-    
-    let mut stmt = conn.prepare(&query).context("Failed to prepare statement")?;
+
+    let mut stmt = conn
+        .prepare(&query)
+        .context("Failed to prepare statement")?;
     let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
-    let params: Vec<&dyn rusqlite::ToSql> = id_strings.iter()
+    let params: Vec<&dyn rusqlite::ToSql> = id_strings
+        .iter()
         .map(|s| s as &dyn rusqlite::ToSql)
         .collect();
-    
-    let cards = stmt.query_map(params.as_slice(), row_to_card)
+
+    let cards = stmt
+        .query_map(params.as_slice(), row_to_card)
         .context("Failed to query cards")?
         .collect::<Result<Vec<_>, _>>()
         .context("Failed to map rows to cards")?;
@@ -141,12 +163,13 @@ pub fn get_cards_by_ids(pool: &SqlitePool, ids: &[Uuid]) -> Result<Vec<Card>> {
 pub fn search_cards_by_name(pool: &SqlitePool, name: &str, limit: i64) -> Result<Vec<Card>> {
     let conn = pool.get().context("Failed to get connection from pool")?;
     let search_pattern = format!("%{}%", name);
-    
-    let mut stmt = conn.prepare(
-        "SELECT * FROM cards WHERE name LIKE ?1 COLLATE NOCASE LIMIT ?2"
-    ).context("Failed to prepare statement")?;
-    
-    let cards = stmt.query_map(params![search_pattern, limit], row_to_card)
+
+    let mut stmt = conn
+        .prepare("SELECT * FROM cards WHERE name LIKE ?1 COLLATE NOCASE LIMIT ?2")
+        .context("Failed to prepare statement")?;
+
+    let cards = stmt
+        .query_map(params![search_pattern, limit], row_to_card)
         .context("Failed to query cards")?
         .collect::<Result<Vec<_>, _>>()
         .context("Failed to map rows to cards")?;
@@ -159,14 +182,15 @@ pub fn search_cards_by_name(pool: &SqlitePool, name: &str, limit: i64) -> Result
 pub fn autocomplete_card_names(pool: &SqlitePool, prefix: &str, limit: i64) -> Result<Vec<String>> {
     let conn = pool.get().context("Failed to get connection from pool")?;
     let search_pattern = format!("{}%", prefix);
-    
+
     let mut stmt = conn.prepare(
         "SELECT DISTINCT name FROM cards WHERE name LIKE ?1 COLLATE NOCASE ORDER BY name LIMIT ?2"
     ).context("Failed to prepare statement")?;
-    
-    let names = stmt.query_map(params![search_pattern, limit], |row| {
-        row.get::<_, String>(0)
-    })
+
+    let names = stmt
+        .query_map(params![search_pattern, limit], |row| {
+            row.get::<_, String>(0)
+        })
         .context("Failed to query card names")?
         .collect::<Result<Vec<_>, _>>()
         .context("Failed to map rows to names")?;
@@ -182,8 +206,7 @@ pub fn store_query_cache(
     ttl_hours: i32,
 ) -> Result<()> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    let card_ids_json = serde_json::to_string(card_ids)
-        .context("Failed to serialize card IDs")?;
+    let card_ids_json = serde_json::to_string(card_ids).context("Failed to serialize card IDs")?;
 
     conn.execute(
         r#"
@@ -196,7 +219,8 @@ pub fn store_query_cache(
             expires_at = datetime('now', '+' || excluded.ttl_hours || ' hours')
         "#,
         params![query_hash, card_ids_json, ttl_hours],
-    ).context("Failed to store query cache")?;
+    )
+    .context("Failed to store query cache")?;
 
     Ok(())
 }
@@ -204,23 +228,26 @@ pub fn store_query_cache(
 /// Get cached query results
 pub fn get_query_cache(pool: &SqlitePool, query_hash: &str) -> Result<Option<(Vec<Uuid>, i32)>> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
-    let result = conn.query_row(
-        r#"
+
+    let result = conn
+        .query_row(
+            r#"
         SELECT card_ids, ttl_hours FROM query_cache
         WHERE query_hash = ?1 AND expires_at > datetime('now')
         "#,
-        params![query_hash],
-        |row| {
-            let card_ids_json: String = row.get(0)?;
-            let ttl_hours: i32 = row.get(1)?;
-            Ok((card_ids_json, ttl_hours))
-        },
-    ).optional().context("Failed to fetch query cache")?;
+            params![query_hash],
+            |row| {
+                let card_ids_json: String = row.get(0)?;
+                let ttl_hours: i32 = row.get(1)?;
+                Ok((card_ids_json, ttl_hours))
+            },
+        )
+        .optional()
+        .context("Failed to fetch query cache")?;
 
     if let Some((card_ids_json, ttl_hours)) = result {
-        let card_ids: Vec<Uuid> = serde_json::from_str(&card_ids_json)
-            .context("Failed to deserialize card IDs")?;
+        let card_ids: Vec<Uuid> =
+            serde_json::from_str(&card_ids_json).context("Failed to deserialize card IDs")?;
         Ok(Some((card_ids, ttl_hours)))
     } else {
         Ok(None)
@@ -230,11 +257,12 @@ pub fn get_query_cache(pool: &SqlitePool, query_hash: &str) -> Result<Option<(Ve
 /// Record a bulk import operation
 pub fn record_bulk_import(pool: &SqlitePool, total_cards: i32, source: &str) -> Result<()> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
+
     conn.execute(
         "INSERT INTO bulk_imports (total_cards, source) VALUES (?1, ?2)",
         params![total_cards, source],
-    ).context("Failed to record bulk import")?;
+    )
+    .context("Failed to record bulk import")?;
 
     Ok(())
 }
@@ -242,11 +270,13 @@ pub fn record_bulk_import(pool: &SqlitePool, total_cards: i32, source: &str) -> 
 /// Clean old cache entries
 pub fn clean_old_cache_entries(pool: &SqlitePool, hours: i32) -> Result<u64> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
-    let deleted = conn.execute(
-        "DELETE FROM query_cache WHERE expires_at < datetime('now', '-' || ?1 || ' hours')",
-        params![hours],
-    ).context("Failed to clean old cache entries")?;
+
+    let deleted = conn
+        .execute(
+            "DELETE FROM query_cache WHERE expires_at < datetime('now', '-' || ?1 || ' hours')",
+            params![hours],
+        )
+        .context("Failed to clean old cache entries")?;
 
     Ok(deleted as u64)
 }
@@ -288,13 +318,16 @@ fn row_to_card(row: &rusqlite::Row) -> rusqlite::Result<Card> {
     })?;
 
     let released_at_str: Option<String> = row.get("released_at")?;
-    let released_at = released_at_str.and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
+    let released_at =
+        released_at_str.and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
 
     let created_at_str: Option<String> = row.get("created_at")?;
-    let created_at = created_at_str.and_then(|s| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").ok());
+    let created_at = created_at_str
+        .and_then(|s| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").ok());
 
     let updated_at_str: Option<String> = row.get("updated_at")?;
-    let updated_at = updated_at_str.and_then(|s| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").ok());
+    let updated_at = updated_at_str
+        .and_then(|s| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S").ok());
 
     Ok(Card {
         id,
@@ -330,7 +363,7 @@ fn row_to_card(row: &rusqlite::Row) -> rusqlite::Result<Card> {
 /// This is a basic implementation that may not handle all query types
 pub fn execute_raw_query(pool: &SqlitePool, sql: &str, params: &[String]) -> Result<Vec<Card>> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
+
     // SQLite doesn't support the same query syntax as PostgreSQL
     // This is a simplified implementation
     let mut stmt = conn
@@ -351,7 +384,7 @@ pub fn execute_raw_query(pool: &SqlitePool, sql: &str, params: &[String]) -> Res
 /// Execute a COUNT query and return the result
 pub fn count_query(pool: &SqlitePool, sql: &str, params: &[String]) -> Result<usize> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
+
     let mut stmt = conn
         .prepare(sql)
         .context("Failed to prepare COUNT statement")?;
@@ -366,7 +399,7 @@ pub fn count_query(pool: &SqlitePool, sql: &str, params: &[String]) -> Result<us
 /// Check if bulk data is loaded
 pub fn check_bulk_data_loaded(pool: &SqlitePool) -> Result<bool> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
+
     let result: i64 = conn
         .query_row("SELECT COUNT(*) FROM cards", [], |row| row.get(0))
         .context("Failed to check if bulk data is loaded")?;
@@ -377,7 +410,7 @@ pub fn check_bulk_data_loaded(pool: &SqlitePool) -> Result<bool> {
 /// Get the timestamp of the last bulk import
 pub fn get_last_bulk_import(pool: &SqlitePool) -> Result<Option<chrono::NaiveDateTime>> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
+
     let result: Option<String> = conn
         .query_row(
             "SELECT imported_at FROM bulk_data_metadata ORDER BY imported_at DESC LIMIT 1",
@@ -399,7 +432,7 @@ pub fn get_last_bulk_import(pool: &SqlitePool) -> Result<Option<chrono::NaiveDat
 /// Get the total count of cards in the database
 pub fn get_card_count(pool: &SqlitePool) -> Result<i64> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
+
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM cards", [], |row| row.get(0))
         .context("Failed to get card count")?;
@@ -410,7 +443,7 @@ pub fn get_card_count(pool: &SqlitePool) -> Result<i64> {
 /// Get the total count of query cache entries
 pub fn get_cache_entry_count(pool: &SqlitePool) -> Result<i64> {
     let conn = pool.get().context("Failed to get connection from pool")?;
-    
+
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM query_cache", [], |row| row.get(0))
         .context("Failed to get cache entry count")?;

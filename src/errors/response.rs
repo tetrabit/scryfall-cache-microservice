@@ -48,11 +48,7 @@ impl ErrorResponse {
     }
 
     /// Create error with additional details
-    pub fn with_details(
-        code: ErrorCode,
-        message: impl Into<String>,
-        details: Value,
-    ) -> Self {
+    pub fn with_details(code: ErrorCode, message: impl Into<String>, details: Value) -> Self {
         Self {
             success: false,
             error: ErrorDetail {
@@ -86,7 +82,7 @@ impl IntoResponse for ErrorResponse {
     fn into_response(self) -> Response {
         let status = StatusCode::from_u16(self.error.code.status_code())
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        
+
         (status, Json(self)).into_response()
     }
 }
@@ -138,11 +134,8 @@ mod tests {
             "expected": ":",
             "got": "="
         });
-        let err = ErrorResponse::with_details(
-            ErrorCode::InvalidQuery,
-            "Query syntax error",
-            details,
-        );
+        let err =
+            ErrorResponse::with_details(ErrorCode::InvalidQuery, "Query syntax error", details);
         assert_eq!(err.error.code, ErrorCode::InvalidQuery);
         assert!(err.error.details.is_some());
     }
@@ -208,7 +201,10 @@ mod tests {
     fn test_into_response_status_internal_error() {
         let error = ErrorResponse::internal_error("Something went wrong");
         let response = error.into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[test]
@@ -222,6 +218,9 @@ mod tests {
     fn test_into_response_status_service_unavailable() {
         let error = ErrorResponse::database_error("Database connection failed");
         let response = error.into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 }

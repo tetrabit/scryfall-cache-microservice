@@ -70,19 +70,11 @@ impl DatabaseBackend for PostgresBackend {
         connection::test_connection(&self.pool).await
     }
 
-    async fn execute_raw_query(
-        &self,
-        sql: &str,
-        params: &[String],
-    ) -> Result<Vec<Card>> {
+    async fn execute_raw_query(&self, sql: &str, params: &[String]) -> Result<Vec<Card>> {
         queries::execute_raw_query(&self.pool, sql, params).await
     }
 
-    async fn count_query(
-        &self,
-        sql: &str,
-        params: &[String],
-    ) -> Result<usize> {
+    async fn count_query(&self, sql: &str, params: &[String]) -> Result<usize> {
         queries::count_query(&self.pool, sql, params).await
     }
 

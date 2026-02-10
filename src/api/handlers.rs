@@ -26,6 +26,7 @@ pub struct AppStateInner {
     pub cache_manager: CacheManager,
     pub bulk_loader: BulkLoader,
     pub query_validator: QueryValidator,
+    pub instance_id: String,
 }
 
 /// Generic API response wrapper
@@ -175,11 +176,14 @@ pub struct AutocompleteResponse {
         (status = 200, description = "Service is healthy", body = serde_json::Value)
     )
 )]
-pub async fn health() -> impl IntoResponse {
+pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    // Backwards-compatible "info" endpoint. This is intentionally liveness-style: it does not
+    // perform dependency checks. Use /health/ready for readiness.
     Json(serde_json::json!({
         "status": "healthy",
         "service": "scryfall-cache",
         "version": env!("CARGO_PKG_VERSION"),
+        "instance_id": state.instance_id.clone(),
         "build": {
             "version": env!("CARGO_PKG_VERSION"),
             "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
@@ -192,6 +196,73 @@ pub async fn health() -> impl IntoResponse {
         },
         "uptime_seconds": START_TIME.elapsed().as_secs(),
     }))
+}
+
+/// Liveness endpoint (no dependency checks)
+#[utoipa::path(
+    get,
+    path = "/health/live",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is alive", body = serde_json::Value)
+    )
+)]
+pub async fn health_live(State(state): State<AppState>) -> impl IntoResponse {
+    Json(serde_json::json!({
+        "status": "alive",
+        "service": "scryfall-cache",
+        "version": env!("CARGO_PKG_VERSION"),
+        "instance_id": state.instance_id.clone(),
+        "uptime_seconds": START_TIME.elapsed().as_secs(),
+    }))
+}
+
+/// Readiness endpoint (dependency checks)
+#[utoipa::path(
+    get,
+    path = "/health/ready",
+    tag = "health",
+    responses(
+        (status = 200, description = "Service is ready to receive traffic", body = serde_json::Value),
+        (status = 503, description = "Service is not ready", body = serde_json::Value)
+    )
+)]
+pub async fn health_ready(State(state): State<AppState>) -> impl IntoResponse {
+    let mut checks = serde_json::Map::new();
+
+    let db_ok = match state.cache_manager.test_database_connection().await {
+        Ok(()) => {
+            checks.insert(
+                "database".to_string(),
+                serde_json::Value::String("ok".to_string()),
+            );
+            true
+        }
+        Err(e) => {
+            checks.insert(
+                "database".to_string(),
+                serde_json::Value::String(format!("error: {}", e)),
+            );
+            false
+        }
+    };
+
+    let status = if db_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(serde_json::json!({
+            "status": if db_ok { "ready" } else { "not_ready" },
+            "service": "scryfall-cache",
+            "version": env!("CARGO_PKG_VERSION"),
+            "instance_id": state.instance_id.clone(),
+            "uptime_seconds": START_TIME.elapsed().as_secs(),
+            "checks": checks,
+        })),
+    )
 }
 
 /// Search for cards
@@ -209,8 +280,10 @@ pub async fn search_cards(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> impl IntoResponse {
-    info!("Search request: query='{}', limit={:?}, page={:?}, page_size={:?}",
-        params.q, params.limit, params.page, params.page_size);
+    info!(
+        "Search request: query='{}', limit={:?}, page={:?}, page_size={:?}",
+        params.q, params.limit, params.page, params.page_size
+    );
 
     // Validate query string
     if let Err(e) = state.query_validator.validate_query_string(&params.q) {
@@ -225,7 +298,8 @@ pub async fn search_cards(
             }
         }
         Err(e) => {
-            return ErrorResponse::invalid_query(format!("Query parse error: {}", e)).into_response();
+            return ErrorResponse::invalid_query(format!("Query parse error: {}", e))
+                .into_response();
         }
     }
 
@@ -234,13 +308,22 @@ pub async fn search_cards(
     let page_size = params.page_size.unwrap_or(100).min(1000).max(1);
 
     // Use the new paginated search which is much faster
-    match state.cache_manager.search_paginated(&params.q, page, page_size).await {
+    match state
+        .cache_manager
+        .search_paginated(&params.q, page, page_size)
+        .await
+    {
         Ok((cards, total)) => {
             let total_pages = total.div_ceil(page_size);
             let has_more = page < total_pages;
 
-            info!("Search returned {} cards (page {}/{}), {} total matches",
-                cards.len(), page, total_pages, total);
+            info!(
+                "Search returned {} cards (page {}/{}), {} total matches",
+                cards.len(),
+                page,
+                total_pages,
+                total
+            );
 
             let response = PaginatedResponse {
                 data: cards,
@@ -255,11 +338,15 @@ pub async fn search_cards(
         }
         Err(e) => {
             error!("Search failed: {}", e);
-            
+
             // Map error type to appropriate error code
             let error_message = e.to_string();
-            if error_message.contains("database") || error_message.contains("connection") || error_message.contains("pool") {
-                ErrorResponse::database_error(format!("Database error during search: {}", e)).into_response()
+            if error_message.contains("database")
+                || error_message.contains("connection")
+                || error_message.contains("pool")
+            {
+                ErrorResponse::database_error(format!("Database error during search: {}", e))
+                    .into_response()
             } else {
                 ErrorResponse::invalid_query(format!("Search failed: {}", e)).into_response()
             }
@@ -281,10 +368,7 @@ pub async fn search_cards(
         (status = 500, description = "Internal server error", body = CardResponse)
     )
 )]
-pub async fn get_card(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> impl IntoResponse {
+pub async fn get_card(State(state): State<AppState>, Path(id): Path<Uuid>) -> impl IntoResponse {
     info!("Get card request: id={}", id);
 
     match state.cache_manager.get_card(id).await {
@@ -325,9 +409,8 @@ pub async fn get_card_by_name(
     } else if let Some(name) = params.exact {
         (name, false)
     } else {
-        return ErrorResponse::validation_error(
-            "Must provide either 'fuzzy' or 'exact' parameter"
-        ).into_response();
+        return ErrorResponse::validation_error("Must provide either 'fuzzy' or 'exact' parameter")
+            .into_response();
     };
 
     info!("Get card by name: name='{}', fuzzy={}", name, fuzzy);
@@ -343,15 +426,26 @@ pub async fn get_card_by_name(
         }
         Err(e) => {
             error!("Get card by name failed: {}", e);
-            
+
             // Map error type to appropriate error code
             let error_message = e.to_string();
-            if error_message.contains("database") || error_message.contains("connection") || error_message.contains("pool") {
+            if error_message.contains("database")
+                || error_message.contains("connection")
+                || error_message.contains("pool")
+            {
                 ErrorResponse::database_error(format!("Database error: {}", e)).into_response()
-            } else if error_message.contains("scryfall") || error_message.contains("API") || error_message.contains("rate limit") {
-                ErrorResponse::new(crate::errors::codes::ErrorCode::ScryfallApiError, format!("Scryfall API error: {}", e)).into_response()
+            } else if error_message.contains("scryfall")
+                || error_message.contains("API")
+                || error_message.contains("rate limit")
+            {
+                ErrorResponse::new(
+                    crate::errors::codes::ErrorCode::ScryfallApiError,
+                    format!("Scryfall API error: {}", e),
+                )
+                .into_response()
             } else {
-                ErrorResponse::internal_error(format!("Failed to search by name: {}", e)).into_response()
+                ErrorResponse::internal_error(format!("Failed to search by name: {}", e))
+                    .into_response()
             }
         }
     }
@@ -377,7 +471,8 @@ pub async fn get_stats(State(state): State<AppState>) -> impl IntoResponse {
         }
         Err(e) => {
             error!("Get stats failed: {}", e);
-            ErrorResponse::database_error(format!("Failed to retrieve stats: {}", e)).into_response()
+            ErrorResponse::database_error(format!("Failed to retrieve stats: {}", e))
+                .into_response()
         }
     }
 }
@@ -400,21 +495,35 @@ pub async fn admin_reload(State(state): State<AppState>) -> impl IntoResponse {
             info!("Bulk data reload completed");
             (
                 StatusCode::OK,
-                Json(ApiResponse::success("Bulk data reload completed".to_string())),
+                Json(ApiResponse::success(
+                    "Bulk data reload completed".to_string(),
+                )),
             )
                 .into_response()
         }
         Err(e) => {
             error!("Bulk data reload failed: {}", e);
-            
+
             // Map error type to appropriate error code
             let error_message = e.to_string();
-            if error_message.contains("scryfall") || error_message.contains("download") || error_message.contains("HTTP") {
-                ErrorResponse::new(crate::errors::codes::ErrorCode::ScryfallApiError, format!("Failed to download bulk data: {}", e)).into_response()
+            if error_message.contains("scryfall")
+                || error_message.contains("download")
+                || error_message.contains("HTTP")
+            {
+                ErrorResponse::new(
+                    crate::errors::codes::ErrorCode::ScryfallApiError,
+                    format!("Failed to download bulk data: {}", e),
+                )
+                .into_response()
             } else if error_message.contains("database") || error_message.contains("connection") {
-                ErrorResponse::database_error(format!("Failed to load bulk data into database: {}", e)).into_response()
+                ErrorResponse::database_error(format!(
+                    "Failed to load bulk data into database: {}",
+                    e
+                ))
+                .into_response()
             } else {
-                ErrorResponse::internal_error(format!("Bulk data reload failed: {}", e)).into_response()
+                ErrorResponse::internal_error(format!("Bulk data reload failed: {}", e))
+                    .into_response()
             }
         }
     }
@@ -437,7 +546,7 @@ pub async fn autocomplete_cards(
     Query(params): Query<AutocompleteParams>,
 ) -> impl IntoResponse {
     let prefix = params.q.trim();
-    
+
     // Return empty results for very short queries
     if prefix.len() < 2 {
         return (
@@ -454,7 +563,11 @@ pub async fn autocomplete_cards(
 
     match state.cache_manager.autocomplete(prefix).await {
         Ok(names) => {
-            info!("Autocomplete returned {} names for prefix '{}'", names.len(), prefix);
+            info!(
+                "Autocomplete returned {} names for prefix '{}'",
+                names.len(),
+                prefix
+            );
             (
                 StatusCode::OK,
                 Json(AutocompleteResponse {

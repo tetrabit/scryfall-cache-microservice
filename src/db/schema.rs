@@ -28,10 +28,13 @@ pub async fn run_migrations(pool: &PgPool) -> Result<()> {
             continue;
         }
 
-        sqlx::query(trimmed)
-            .execute(pool)
-            .await
-            .with_context(|| format!("Failed to execute migration statement {}: {}", i + 1, &trimmed[..trimmed.len().min(100)]))?;
+        sqlx::query(trimmed).execute(pool).await.with_context(|| {
+            format!(
+                "Failed to execute migration statement {}: {}",
+                i + 1,
+                &trimmed[..trimmed.len().min(100)]
+            )
+        })?;
     }
 
     info!("Database migrations completed successfully");
@@ -121,7 +124,7 @@ pub async fn get_card_count(pool: &PgPool) -> Result<i64> {
 #[cfg(feature = "postgres")]
 pub async fn get_last_bulk_import(pool: &PgPool) -> Result<Option<chrono::NaiveDateTime>> {
     let result: Option<(chrono::NaiveDateTime,)> = sqlx::query_as(
-        "SELECT imported_at FROM bulk_data_metadata ORDER BY imported_at DESC LIMIT 1"
+        "SELECT imported_at FROM bulk_data_metadata ORDER BY imported_at DESC LIMIT 1",
     )
     .fetch_optional(pool)
     .await

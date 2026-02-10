@@ -43,87 +43,103 @@ impl Card {
     /// Create a Card from raw Scryfall JSON
     pub fn from_scryfall_json(value: serde_json::Value) -> Result<Self> {
         // Extract fields from the JSON value
-        let id = value.get("id")
+        let id = value
+            .get("id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok())
             .context("Missing or invalid 'id' field")?;
 
-        let oracle_id = value.get("oracle_id")
+        let oracle_id = value
+            .get("oracle_id")
             .and_then(|v| v.as_str())
             .and_then(|s| Uuid::parse_str(s).ok());
 
-        let name = value.get("name")
+        let name = value
+            .get("name")
             .and_then(|v| v.as_str())
             .context("Missing 'name' field")?
             .to_string();
 
-        let mana_cost = value.get("mana_cost")
+        let mana_cost = value
+            .get("mana_cost")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let cmc = value.get("cmc")
-            .and_then(|v| v.as_f64());
+        let cmc = value.get("cmc").and_then(|v| v.as_f64());
 
-        let type_line = value.get("type_line")
+        let type_line = value
+            .get("type_line")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let oracle_text = value.get("oracle_text")
+        let oracle_text = value
+            .get("oracle_text")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let colors = value.get("colors")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter()
+        let colors = value.get("colors").and_then(|v| v.as_array()).map(|arr| {
+            arr.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect());
+                .collect()
+        });
 
-        let color_identity = value.get("color_identity")
+        let color_identity = value
+            .get("color_identity")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            });
+
+        let set_code = value
+            .get("set")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let set_name = value
+            .get("set_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let collector_number = value
+            .get("collector_number")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let rarity = value
+            .get("rarity")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let power = value
+            .get("power")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let toughness = value
+            .get("toughness")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let loyalty = value
+            .get("loyalty")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let keywords = value.get("keywords").and_then(|v| v.as_array()).map(|arr| {
+            arr.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect());
-
-        let set_code = value.get("set")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let set_name = value.get("set_name")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let collector_number = value.get("collector_number")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let rarity = value.get("rarity")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let power = value.get("power")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let toughness = value.get("toughness")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let loyalty = value.get("loyalty")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let keywords = value.get("keywords")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect());
+                .collect()
+        });
 
         let prices = value.get("prices").cloned();
         let image_uris = value.get("image_uris").cloned();
         let card_faces = value.get("card_faces").cloned();
         let legalities = value.get("legalities").cloned();
 
-        let released_at = value.get("released_at")
+        let released_at = value
+            .get("released_at")
             .and_then(|v| v.as_str())
             .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
 

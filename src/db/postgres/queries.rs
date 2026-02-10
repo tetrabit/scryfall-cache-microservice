@@ -78,20 +78,21 @@ pub async fn insert_cards_batch(pool: &PgPool, cards: &[Card]) -> Result<()> {
         .context("Failed to insert card")?;
     }
 
-    transaction.commit().await.context("Failed to commit transaction")?;
+    transaction
+        .commit()
+        .await
+        .context("Failed to commit transaction")?;
 
     Ok(())
 }
 
 /// Get a card by ID
 pub async fn get_card_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Card>> {
-    let card = sqlx::query_as::<_, Card>(
-        "SELECT * FROM cards WHERE id = $1"
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
-    .context("Failed to fetch card by ID")?;
+    let card = sqlx::query_as::<_, Card>("SELECT * FROM cards WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .context("Failed to fetch card by ID")?;
 
     Ok(card)
 }
@@ -110,9 +111,7 @@ pub async fn get_cards_by_ids(pool: &PgPool, ids: &[Uuid]) -> Result<Vec<Card>> 
 
     for chunk in ids.chunks(CHUNK_SIZE) {
         // Build a query with placeholders
-        let placeholders: Vec<String> = (1..=chunk.len())
-            .map(|i| format!("${}", i))
-            .collect();
+        let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("${}", i)).collect();
         let query_str = format!(
             "SELECT * FROM cards WHERE id IN ({})",
             placeholders.join(", ")
@@ -142,7 +141,7 @@ pub async fn search_cards_by_name(pool: &PgPool, name: &str, limit: i64) -> Resu
         WHERE to_tsvector('english', name) @@ plainto_tsquery('english', $1)
         ORDER BY name
         LIMIT $2
-        "#
+        "#,
     )
     .bind(name)
     .bind(limit)
@@ -155,11 +154,15 @@ pub async fn search_cards_by_name(pool: &PgPool, name: &str, limit: i64) -> Resu
 
 /// Autocomplete card names by prefix (case-insensitive)
 /// Uses the existing idx_cards_name GIN index for fast prefix matching
-pub async fn autocomplete_card_names(pool: &PgPool, prefix: &str, limit: i64) -> Result<Vec<String>> {
+pub async fn autocomplete_card_names(
+    pool: &PgPool,
+    prefix: &str,
+    limit: i64,
+) -> Result<Vec<String>> {
     // Use ILIKE for case-insensitive prefix matching
     // The idx_cards_name GIN index can be used for prefix searches in PostgreSQL
     let pattern = format!("{}%", prefix);
-    
+
     let names: Vec<(String,)> = sqlx::query_as(
         r#"
         SELECT DISTINCT name
@@ -167,7 +170,7 @@ pub async fn autocomplete_card_names(pool: &PgPool, prefix: &str, limit: i64) ->
         WHERE name ILIKE $1
         ORDER BY name
         LIMIT $2
-        "#
+        "#,
     )
     .bind(&pattern)
     .bind(limit)
@@ -185,8 +188,7 @@ pub async fn store_query_cache(
     card_ids: &[Uuid],
     ttl_hours: i32,
 ) -> Result<()> {
-    let card_ids_json = serde_json::to_string(card_ids)
-        .context("Failed to serialize card IDs")?;
+    let card_ids_json = serde_json::to_string(card_ids).context("Failed to serialize card IDs")?;
 
     sqlx::query(
         r#"
@@ -224,8 +226,8 @@ pub async fn get_query_cache(pool: &PgPool, query_hash: &str) -> Result<Option<(
     .context("Failed to get query cache")?;
 
     if let Some((card_ids_json, ttl_hours)) = result {
-        let card_ids: Vec<Uuid> = serde_json::from_str(&card_ids_json)
-            .context("Failed to deserialize card IDs")?;
+        let card_ids: Vec<Uuid> =
+            serde_json::from_str(&card_ids_json).context("Failed to deserialize card IDs")?;
         Ok(Some((card_ids, ttl_hours)))
     } else {
         Ok(None)
@@ -233,11 +235,7 @@ pub async fn get_query_cache(pool: &PgPool, query_hash: &str) -> Result<Option<(
 }
 
 /// Record bulk data import
-pub async fn record_bulk_import(
-    pool: &PgPool,
-    total_cards: i32,
-    source: &str,
-) -> Result<()> {
+pub async fn record_bulk_import(pool: &PgPool, total_cards: i32, source: &str) -> Result<()> {
     sqlx::query(
         r#"
         INSERT INTO bulk_data_metadata (total_cards, source, imported_at)
@@ -316,7 +314,7 @@ pub async fn check_bulk_data_loaded(pool: &PgPool) -> Result<bool> {
 /// Get the timestamp of the last bulk import
 pub async fn get_last_bulk_import(pool: &PgPool) -> Result<Option<chrono::NaiveDateTime>> {
     let result: Option<(chrono::NaiveDateTime,)> = sqlx::query_as(
-        "SELECT imported_at FROM bulk_data_metadata ORDER BY imported_at DESC LIMIT 1"
+        "SELECT imported_at FROM bulk_data_metadata ORDER BY imported_at DESC LIMIT 1",
     )
     .fetch_optional(pool)
     .await

@@ -36,11 +36,7 @@ pub trait DatabaseBackend: Send + Sync {
     async fn get_query_cache(&self, query_hash: &str) -> Result<Option<(Vec<Uuid>, i32)>>;
 
     /// Record a bulk import operation
-    async fn record_bulk_import(
-        &self,
-        total_cards: i32,
-        source: &str,
-    ) -> Result<()>;
+    async fn record_bulk_import(&self, total_cards: i32, source: &str) -> Result<()>;
 
     /// Clean old cache entries
     async fn clean_old_cache_entries(&self, hours: i32) -> Result<u64>;
@@ -50,18 +46,10 @@ pub trait DatabaseBackend: Send + Sync {
 
     /// Execute a raw SQL query and return cards
     /// This is primarily for PostgreSQL; SQLite support may be limited
-    async fn execute_raw_query(
-        &self,
-        sql: &str,
-        params: &[String],
-    ) -> Result<Vec<Card>>;
+    async fn execute_raw_query(&self, sql: &str, params: &[String]) -> Result<Vec<Card>>;
 
     /// Execute a COUNT query and return the result
-    async fn count_query(
-        &self,
-        sql: &str,
-        params: &[String],
-    ) -> Result<usize>;
+    async fn count_query(&self, sql: &str, params: &[String]) -> Result<usize>;
 
     /// Check if bulk data is loaded (count of cards > 0)
     async fn check_bulk_data_loaded(&self) -> Result<bool>;

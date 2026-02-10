@@ -66,7 +66,10 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!("Starting Scryfall Cache Microservice v{}", env!("CARGO_PKG_VERSION"));
+    info!(
+        "Starting Scryfall Cache Microservice v{}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Initialize metrics
     metrics::registry::init_metrics();
@@ -81,7 +84,7 @@ async fn main() -> Result<()> {
     let db = db::init_database(&config.database)
         .await
         .context("Failed to initialize database")?;
-    
+
     db.test_connection()
         .await
         .context("Failed to test database connection")?;
@@ -128,6 +131,7 @@ async fn main() -> Result<()> {
         cache_manager,
         bulk_loader: (*bulk_loader_clone).clone(),
         query_validator,
+        instance_id: config.server.instance_id.clone(),
     });
 
     // Start background bulk data refresh job

@@ -8,7 +8,9 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::ScryfallConfig;
 use crate::db::Database;
-use crate::metrics::{BULK_DATA_CARDS_IMPORTED, BULK_DATA_LAST_LOAD_TIMESTAMP, BULK_DATA_LOAD_DURATION_SECONDS};
+use crate::metrics::{
+    BULK_DATA_CARDS_IMPORTED, BULK_DATA_LAST_LOAD_TIMESTAMP, BULK_DATA_LOAD_DURATION_SECONDS,
+};
 use crate::models::card::Card;
 
 const BULK_DATA_API: &str = "https://api.scryfall.com/bulk-data";
@@ -63,12 +65,18 @@ where
         match operation().await {
             Ok(result) => {
                 if attempt > 1 {
-                    info!("{} succeeded on attempt {}/{}", operation_name, attempt, max_retries);
+                    info!(
+                        "{} succeeded on attempt {}/{}",
+                        operation_name, attempt, max_retries
+                    );
                 }
                 return Ok(result);
             }
             Err(e) if attempt >= max_retries => {
-                error!("{} failed after {} attempts: {}", operation_name, max_retries, e);
+                error!(
+                    "{} failed after {} attempts: {}",
+                    operation_name, max_retries, e
+                );
                 return Err(e);
             }
             Err(e) => {
@@ -108,10 +116,16 @@ impl BulkLoader {
                 .num_hours();
 
             if hours_since_import >= self.config.cache_ttl_hours as i64 {
-                info!("Bulk data is stale ({}h old), reload required", hours_since_import);
+                info!(
+                    "Bulk data is stale ({}h old), reload required",
+                    hours_since_import
+                );
                 return Ok(true);
             } else {
-                info!("Bulk data is fresh ({}h old), skipping reload", hours_since_import);
+                info!(
+                    "Bulk data is fresh ({}h old), skipping reload",
+                    hours_since_import
+                );
                 return Ok(false);
             }
         }
@@ -144,11 +158,9 @@ impl BulkLoader {
 
         // Get the bulk type for the source field
         let source = bulk_info.download_uri.clone();
-        self.db.record_bulk_import(
-            total_cards as i32,
-            &source,
-        )
-        .await?;
+        self.db
+            .record_bulk_import(total_cards as i32, &source)
+            .await?;
 
         let duration = start.elapsed();
         info!(
@@ -175,7 +187,7 @@ impl BulkLoader {
 
         // Fetch Scryfall's current bulk data info
         let bulk_info = self.discover_bulk_data().await?;
-        
+
         // Parse Scryfall's updated_at timestamp
         let their_updated_at = chrono::DateTime::parse_from_rfc3339(&bulk_info.updated_at)
             .context("Failed to parse Scryfall updated_at timestamp")?
@@ -260,10 +272,14 @@ impl BulkLoader {
             &response_body[..response_body.len().min(200)]
         ))?;
 
-        info!("Discovered {} bulk data sets from Scryfall", bulk_list.data.len());
+        info!(
+            "Discovered {} bulk data sets from Scryfall",
+            bulk_list.data.len()
+        );
 
         // Log available types for debugging
-        let available_types: Vec<String> = bulk_list.data.iter().map(|d| d.bulk_type.clone()).collect();
+        let available_types: Vec<String> =
+            bulk_list.data.iter().map(|d| d.bulk_type.clone()).collect();
         debug!("Available bulk data types: {:?}", available_types);
 
         // Find the requested bulk data type
@@ -354,7 +370,8 @@ impl BulkLoader {
         }
 
         // Warn if size differs significantly from expected
-        let size_diff_pct = ((actual_size - expected_size) as f64 / expected_size as f64).abs() * 100.0;
+        let size_diff_pct =
+            ((actual_size - expected_size) as f64 / expected_size as f64).abs() * 100.0;
         if size_diff_pct > 10.0 {
             warn!(
                 "Downloaded size ({} bytes) differs from expected size ({} bytes) by {:.1}%",
@@ -370,7 +387,10 @@ impl BulkLoader {
         info!("Parsing bulk data...");
 
         // Try to parse as JSON directly first (in case reqwest auto-decompressed)
-        let json_array: Vec<serde_json::Value> = match serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) {
+        let json_array: Vec<serde_json::Value> = match serde_json::from_slice::<
+            Vec<serde_json::Value>,
+        >(&bytes)
+        {
             Ok(array) => {
                 info!("Successfully parsed JSON directly (data was already decompressed)");
                 debug!("Parsed {} top-level elements", array.len());
@@ -407,7 +427,10 @@ impl BulkLoader {
         };
 
         let total_cards = json_array.len();
-        info!("Parsed {} cards from JSON array, starting import...", total_cards);
+        info!(
+            "Parsed {} cards from JSON array, starting import...",
+            total_cards
+        );
 
         if total_cards == 0 {
             return Err(anyhow::anyhow!(
@@ -451,7 +474,10 @@ impl BulkLoader {
                             "Failed to parse card at index {}: {}. Card preview: {:?}",
                             idx,
                             e,
-                            card_json.get("name").and_then(|v| v.as_str()).unwrap_or("unknown")
+                            card_json
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
                         );
                     } else if failed % 100 == 0 {
                         // Log every 100th failure after that

@@ -20,6 +20,8 @@ use crate::models::card::Card;
     ),
     paths(
         crate::api::handlers::health,
+        crate::api::handlers::health_live,
+        crate::api::handlers::health_ready,
         crate::api::handlers::search_cards,
         crate::api::handlers::get_card_by_name,
         crate::api::handlers::autocomplete_cards,

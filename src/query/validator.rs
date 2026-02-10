@@ -70,14 +70,19 @@ impl QueryValidator {
                 ')' => {
                     paren_count -= 1;
                     if paren_count < 0 {
-                        return Err(anyhow!("Unbalanced parentheses: too many closing parentheses"));
+                        return Err(anyhow!(
+                            "Unbalanced parentheses: too many closing parentheses"
+                        ));
                     }
                 }
                 _ => {}
             }
         }
         if paren_count != 0 {
-            return Err(anyhow!("Unbalanced parentheses: {} unclosed parentheses", paren_count));
+            return Err(anyhow!(
+                "Unbalanced parentheses: {} unclosed parentheses",
+                paren_count
+            ));
         }
 
         Ok(())
@@ -244,7 +249,10 @@ mod tests {
         };
         let result = validator.validate_filter(&filter);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid field name"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid field name"));
     }
 
     #[test]
@@ -257,7 +265,10 @@ mod tests {
         };
         let result = validator.validate_filter(&filter);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not valid for text field"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not valid for text field"));
     }
 
     #[test]

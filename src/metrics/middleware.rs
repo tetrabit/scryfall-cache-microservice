@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 
 use super::registry::{HTTP_REQUESTS_TOTAL, HTTP_REQUEST_DURATION_SECONDS};

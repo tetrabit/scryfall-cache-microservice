@@ -34,9 +34,9 @@ pub async fn init_database(config: &crate::config::DatabaseConfig) -> Result<Dat
 #[cfg(feature = "sqlite")]
 pub async fn init_database(config: &crate::config::DatabaseConfig) -> Result<Database> {
     tracing::info!("Initializing SQLite backend");
-    let database_path = std::env::var("SQLITE_PATH")
-        .unwrap_or_else(|_| "./data/scryfall-cache.db".to_string());
-    
+    let database_path =
+        std::env::var("SQLITE_PATH").unwrap_or_else(|_| "./data/scryfall-cache.db".to_string());
+
     let pool = sqlite::connection::create_pool(&database_path)?;
     let backend = SqliteBackend::new(pool)?;
     Ok(Arc::new(backend) as Database)

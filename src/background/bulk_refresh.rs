@@ -79,7 +79,10 @@ pub fn start_bulk_refresh_job(
         loop {
             ticker.tick().await;
 
-            info!("Scheduled bulk data refresh check (interval: {} hours)...", config.check_interval_hours);
+            info!(
+                "Scheduled bulk data refresh check (interval: {} hours)...",
+                config.check_interval_hours
+            );
 
             // First, check if Scryfall's data has actually updated
             match bulk_loader.check_upstream_updated().await {

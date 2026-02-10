@@ -19,8 +19,7 @@ impl RateLimiter {
     /// Create a new rate limiter
     pub fn new(requests_per_second: u32) -> Self {
         let quota = Quota::per_second(
-            NonZeroU32::new(requests_per_second)
-                .expect("requests_per_second must be > 0")
+            NonZeroU32::new(requests_per_second).expect("requests_per_second must be > 0"),
         );
 
         let limiter = GovernorRateLimiter::direct(quota);
@@ -91,7 +90,8 @@ mod tests {
         }
         let elapsed = start.elapsed();
 
-        // Should take at least 1 second to complete 10 requests at 5 req/sec
-        assert!(elapsed >= Duration::from_millis(1800));
+        // Governor allows a burst, so we only assert it wasn't instantaneous.
+        // 10 requests at 5 req/sec should take roughly >= 1s in practice.
+        assert!(elapsed >= Duration::from_millis(900));
     }
 }

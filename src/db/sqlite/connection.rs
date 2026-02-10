@@ -12,12 +12,11 @@ pub type SqlitePool = Pool<SqliteConnectionManager>;
 pub fn create_pool(database_path: &str) -> Result<SqlitePool> {
     // Ensure parent directory exists
     if let Some(parent) = Path::new(database_path).parent() {
-        std::fs::create_dir_all(parent)
-            .context("Failed to create database directory")?;
+        std::fs::create_dir_all(parent).context("Failed to create database directory")?;
     }
 
     let manager = SqliteConnectionManager::file(database_path);
-    
+
     Pool::builder()
         .max_size(15) // SQLite doesn't handle as many connections as Postgres
         .connection_timeout(Duration::from_secs(30))
@@ -67,7 +66,8 @@ pub fn init_schema(pool: &SqlitePool) -> Result<()> {
         )
         "#,
         params![],
-    ).context("Failed to create cards table")?;
+    )
+    .context("Failed to create cards table")?;
 
     // Create query_cache table
     conn.execute(
@@ -81,7 +81,8 @@ pub fn init_schema(pool: &SqlitePool) -> Result<()> {
         )
         "#,
         params![],
-    ).context("Failed to create query_cache table")?;
+    )
+    .context("Failed to create query_cache table")?;
 
     // Create bulk_imports table
     conn.execute(
@@ -94,71 +95,83 @@ pub fn init_schema(pool: &SqlitePool) -> Result<()> {
         )
         "#,
         params![],
-    ).context("Failed to create bulk_imports table")?;
+    )
+    .context("Failed to create bulk_imports table")?;
 
     // Create indexes for performance
     // Note: SQLite doesn't support GIN indexes like PostgreSQL, so we use standard B-tree indexes
-    
+
     // Core indexes for common queries
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name)",
         params![],
-    ).context("Failed to create name index")?;
+    )
+    .context("Failed to create name index")?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_oracle_id ON cards(oracle_id)",
         params![],
-    ).context("Failed to create oracle_id index")?;
+    )
+    .context("Failed to create oracle_id index")?;
 
     // Phase 2 Performance Indexes - Added for 2-3x query speedup
     // These indexes optimize common Scryfall query patterns
-    
+
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_colors ON cards(colors)",
         params![],
-    ).context("Failed to create colors index")?;
+    )
+    .context("Failed to create colors index")?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_color_identity ON cards(color_identity)",
         params![],
-    ).context("Failed to create color_identity index")?;
+    )
+    .context("Failed to create color_identity index")?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_cmc ON cards(cmc)",
         params![],
-    ).context("Failed to create cmc index")?;
+    )
+    .context("Failed to create cmc index")?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_type_line ON cards(type_line)",
         params![],
-    ).context("Failed to create type_line index")?;
+    )
+    .context("Failed to create type_line index")?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_set_code ON cards(set_code)",
         params![],
-    ).context("Failed to create set_code index")?;
+    )
+    .context("Failed to create set_code index")?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_rarity ON cards(rarity)",
         params![],
-    ).context("Failed to create rarity index")?;
+    )
+    .context("Failed to create rarity index")?;
 
     // Composite indexes for common query combinations
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_set_rarity ON cards(set_code, rarity)",
         params![],
-    ).context("Failed to create set_rarity composite index")?;
+    )
+    .context("Failed to create set_rarity composite index")?;
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_cards_set_collector ON cards(set_code, collector_number)",
         params![],
-    ).context("Failed to create set_collector composite index")?;
+    )
+    .context("Failed to create set_collector composite index")?;
 
     // Query cache index
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_query_cache_expires ON query_cache(expires_at)",
         params![],
-    ).context("Failed to create expires_at index")?;
+    )
+    .context("Failed to create expires_at index")?;
 
     Ok(())
 }

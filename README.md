@@ -135,10 +135,16 @@ DATABASE_MAX_CONNECTIONS=10
 # API Server
 API_HOST=0.0.0.0
 API_PORT=8080
+INSTANCE_ID=api-1
 
 # Scryfall API
 SCRYFALL_API_BASE_URL=https://api.scryfall.com
 SCRYFALL_RATE_LIMIT_PER_SECOND=10
+
+# Background jobs
+# If you run multiple API instances, consider disabling refresh on all but one instance.
+BULK_REFRESH_ENABLED=true
+BULK_REFRESH_INTERVAL_HOURS=720
 ```
 
 #### SQLite Configuration
@@ -174,7 +180,12 @@ cargo build --release --no-default-features --features sqlite
 Binary will be at `target/release/scryfall-cache` (~19MB stripped).
 
 ## Development
+
+Example local environment:
+
+```bash
 API_PORT=8080
+INSTANCE_ID=api-1
 
 # Scryfall API
 SCRYFALL_RATE_LIMIT_PER_SECOND=10
@@ -187,24 +198,38 @@ QUERY_CACHE_MAX_SIZE=10000
 
 # Logging
 RUST_LOG=info,scryfall_cache=debug
+
+# Background jobs
+BULK_REFRESH_ENABLED=true
+BULK_REFRESH_INTERVAL_HOURS=720
 ```
 
 ## API Endpoints
 
-### Health Check
+### Health Checks
 
 ```bash
 GET /health
+GET /health/live
+GET /health/ready
 ```
 
-Response:
+`/health` and `/health/live` are liveness-style endpoints (no dependency checks). Use `/health/ready` for readiness (returns `503` if dependencies are unavailable).
+
+Response (example):
 ```json
 {
-  "status": "healthy",
+  "status": "ready",
   "service": "scryfall-cache",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "instance_id": "api-1",
+  "checks": {
+    "database": "ok"
+  }
 }
 ```
+
+You can set `INSTANCE_ID` (or rely on `HOSTNAME`) to help debug which instance served a request.
 
 ### Search Cards
 

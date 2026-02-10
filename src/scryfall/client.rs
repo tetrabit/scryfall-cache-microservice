@@ -64,7 +64,8 @@ impl ScryfallClient {
 
         // Execute through circuit breaker
         let client = self.http_client.clone();
-        match self.circuit_breaker
+        match self
+            .circuit_breaker
             .call(async move {
                 client
                     .get(&url)
@@ -77,7 +78,9 @@ impl ScryfallClient {
             Ok(response) => Ok(response),
             Err(CircuitBreakerError::Open) => {
                 warn!("Circuit breaker open, request rejected");
-                Err(anyhow::anyhow!("Circuit breaker is open - Scryfall API unavailable"))
+                Err(anyhow::anyhow!(
+                    "Circuit breaker is open - Scryfall API unavailable"
+                ))
             }
             Err(CircuitBreakerError::Inner(e)) => Err(e),
         }
@@ -172,8 +175,8 @@ impl ScryfallClient {
             .await
             .context("Failed to parse Scryfall response")?;
 
-        let card = Card::from_scryfall_json(card_json)
-            .context("Failed to convert Scryfall card")?;
+        let card =
+            Card::from_scryfall_json(card_json).context("Failed to convert Scryfall card")?;
 
         Ok(Some(card))
     }
@@ -205,8 +208,8 @@ impl ScryfallClient {
             .await
             .context("Failed to parse Scryfall response")?;
 
-        let card = Card::from_scryfall_json(card_json)
-            .context("Failed to convert Scryfall card")?;
+        let card =
+            Card::from_scryfall_json(card_json).context("Failed to convert Scryfall card")?;
 
         Ok(Some(card))
     }

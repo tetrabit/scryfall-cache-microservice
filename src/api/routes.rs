@@ -12,8 +12,8 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use super::handlers::{
-    admin_reload, autocomplete_cards, get_card, get_card_by_name, get_stats, health, search_cards,
-    AppState,
+    admin_reload, autocomplete_cards, get_card, get_card_by_name, get_stats, health, health_live,
+    health_ready, search_cards, AppState,
 };
 use super::middleware::logging_middleware;
 use super::openapi::ApiDoc;
@@ -29,6 +29,8 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         // Health check
         .route("/health", get(health))
+        .route("/health/live", get(health_live))
+        .route("/health/ready", get(health_ready))
         // Card search endpoints
         .route("/cards/search", get(search_cards))
         .route("/cards/named", get(get_card_by_name))

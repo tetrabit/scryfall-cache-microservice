@@ -162,7 +162,8 @@ impl QueryParser {
     }
 
     fn parse_term(&mut self) -> Result<QueryNode> {
-        let token = self.current()
+        let token = self
+            .current()
             .ok_or_else(|| anyhow::anyhow!("Unexpected end of query"))?
             .clone();
 
@@ -185,7 +186,8 @@ impl QueryParser {
     }
 
     fn parse_filter(&mut self) -> Result<QueryNode> {
-        let token = self.current()
+        let token = self
+            .current()
             .ok_or_else(|| anyhow::anyhow!("Expected filter"))?
             .clone();
 
@@ -224,7 +226,7 @@ impl QueryParser {
         } else if let Some(rest) = s.strip_prefix('=') {
             Ok((Operator::Equal, rest.to_string()))
         } else if s.starts_with('/') && s.ends_with('/') && s.len() > 2 {
-            Ok((Operator::Regex, s[1..s.len()-1].to_string()))
+            Ok((Operator::Regex, s[1..s.len() - 1].to_string()))
         } else {
             Ok((Operator::Contains, s.to_string()))
         }
@@ -308,15 +310,13 @@ mod tests {
     fn test_parse_not() {
         let ast = QueryParser::parse("not c:red").unwrap();
         match ast {
-            QueryNode::Not(inner) => {
-                match *inner {
-                    QueryNode::Filter(filter) => {
-                        assert_eq!(filter.field, "color");
-                        assert_eq!(filter.value, "red");
-                    }
-                    _ => panic!("Expected Filter node inside Not"),
+            QueryNode::Not(inner) => match *inner {
+                QueryNode::Filter(filter) => {
+                    assert_eq!(filter.field, "color");
+                    assert_eq!(filter.value, "red");
                 }
-            }
+                _ => panic!("Expected Filter node inside Not"),
+            },
             _ => panic!("Expected Not node"),
         }
     }
