@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::cache::manager::{CacheManager, CacheStats};
-use crate::errors::ErrorResponse;
+use crate::errors::{ErrorCode, ErrorResponse};
 use crate::models::card::Card;
 use crate::query::{QueryParser, QueryValidator};
 use crate::scryfall::bulk_loader::BulkLoader;
@@ -341,14 +341,23 @@ pub async fn search_cards(
 
             // Map error type to appropriate error code
             let error_message = e.to_string();
-            if error_message.contains("database")
+            if error_message.contains("Scryfall API error")
+                || error_message.contains("Scryfall API unavailable")
+                || error_message.contains("Circuit breaker")
+            {
+                ErrorResponse::new(
+                    ErrorCode::ScryfallApiError,
+                    format!("Upstream Scryfall failure: {}", e),
+                )
+                .into_response()
+            } else if error_message.contains("database")
                 || error_message.contains("connection")
                 || error_message.contains("pool")
             {
                 ErrorResponse::database_error(format!("Database error during search: {}", e))
                     .into_response()
             } else {
-                ErrorResponse::invalid_query(format!("Search failed: {}", e)).into_response()
+                ErrorResponse::internal_error(format!("Search failed: {}", e)).into_response()
             }
         }
     }
@@ -382,7 +391,26 @@ pub async fn get_card(State(state): State<AppState>, Path(id): Path<Uuid>) -> im
         }
         Err(e) => {
             error!("Get card failed: {}", e);
-            ErrorResponse::database_error(format!("Failed to fetch card: {}", e)).into_response()
+            let error_message = e.to_string();
+            if error_message.contains("Scryfall API error")
+                || error_message.contains("Scryfall API unavailable")
+                || error_message.contains("Circuit breaker")
+            {
+                ErrorResponse::new(
+                    ErrorCode::ScryfallApiError,
+                    format!("Upstream Scryfall failure: {}", e),
+                )
+                .into_response()
+            } else if error_message.contains("database")
+                || error_message.contains("connection")
+                || error_message.contains("pool")
+            {
+                ErrorResponse::database_error(format!("Failed to fetch card: {}", e))
+                    .into_response()
+            } else {
+                ErrorResponse::internal_error(format!("Failed to fetch card: {}", e))
+                    .into_response()
+            }
         }
     }
 }
@@ -439,7 +467,7 @@ pub async fn get_card_by_name(
                 || error_message.contains("rate limit")
             {
                 ErrorResponse::new(
-                    crate::errors::codes::ErrorCode::ScryfallApiError,
+                    ErrorCode::ScryfallApiError,
                     format!("Scryfall API error: {}", e),
                 )
                 .into_response()

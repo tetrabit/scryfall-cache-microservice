@@ -14,10 +14,6 @@ pub enum ErrorCode {
     #[serde(rename = "CARD_NOT_FOUND")]
     CardNotFound,
 
-    /// Too many requests / rate limit exceeded
-    #[serde(rename = "RATE_LIMIT_EXCEEDED")]
-    RateLimitExceeded,
-
     /// Database connection or query error
     #[serde(rename = "DATABASE_ERROR")]
     DatabaseError,
@@ -25,10 +21,6 @@ pub enum ErrorCode {
     /// Upstream Scryfall API failure
     #[serde(rename = "SCRYFALL_API_ERROR")]
     ScryfallApiError,
-
-    /// Authentication failed
-    #[serde(rename = "INVALID_API_KEY")]
-    InvalidApiKey,
 
     /// Input validation failed
     #[serde(rename = "VALIDATION_ERROR")]
@@ -44,10 +36,8 @@ impl fmt::Display for ErrorCode {
         match self {
             Self::InvalidQuery => write!(f, "INVALID_QUERY"),
             Self::CardNotFound => write!(f, "CARD_NOT_FOUND"),
-            Self::RateLimitExceeded => write!(f, "RATE_LIMIT_EXCEEDED"),
             Self::DatabaseError => write!(f, "DATABASE_ERROR"),
             Self::ScryfallApiError => write!(f, "SCRYFALL_API_ERROR"),
-            Self::InvalidApiKey => write!(f, "INVALID_API_KEY"),
             Self::ValidationError => write!(f, "VALIDATION_ERROR"),
             Self::InternalError => write!(f, "INTERNAL_ERROR"),
         }
@@ -60,10 +50,8 @@ impl ErrorCode {
         match self {
             Self::InvalidQuery => 400,
             Self::CardNotFound => 404,
-            Self::RateLimitExceeded => 429,
             Self::DatabaseError => 503,
             Self::ScryfallApiError => 502,
-            Self::InvalidApiKey => 401,
             Self::ValidationError => 400,
             Self::InternalError => 500,
         }

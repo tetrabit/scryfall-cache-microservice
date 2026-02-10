@@ -154,9 +154,7 @@ mod tests {
         // Test all ErrorCode variants map to correct HTTP status codes
         assert_eq!(ErrorCode::InvalidQuery.status_code(), 400);
         assert_eq!(ErrorCode::ValidationError.status_code(), 400);
-        assert_eq!(ErrorCode::InvalidApiKey.status_code(), 401);
         assert_eq!(ErrorCode::CardNotFound.status_code(), 404);
-        assert_eq!(ErrorCode::RateLimitExceeded.status_code(), 429);
         assert_eq!(ErrorCode::InternalError.status_code(), 500);
         assert_eq!(ErrorCode::ScryfallApiError.status_code(), 502);
         assert_eq!(ErrorCode::DatabaseError.status_code(), 503);
@@ -177,24 +175,10 @@ mod tests {
     }
 
     #[test]
-    fn test_into_response_status_unauthorized() {
-        let error = ErrorResponse::new(ErrorCode::InvalidApiKey, "Invalid API key");
-        let response = error.into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
-    }
-
-    #[test]
     fn test_into_response_status_not_found() {
         let error = ErrorResponse::card_not_found("abc123");
         let response = error.into_response();
         assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
-    }
-
-    #[test]
-    fn test_into_response_status_rate_limit() {
-        let error = ErrorResponse::new(ErrorCode::RateLimitExceeded, "Rate limit exceeded");
-        let response = error.into_response();
-        assert_eq!(response.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[test]
