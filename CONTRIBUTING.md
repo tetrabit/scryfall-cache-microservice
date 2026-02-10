@@ -107,6 +107,9 @@ git checkout -b feature/your-feature-name
 # Run tests
 cargo test
 
+# Or run the project's standard local checks (backend + admin-panel):
+./scripts/ci.sh
+
 # Run clippy
 cargo clippy --all-targets --all-features
 

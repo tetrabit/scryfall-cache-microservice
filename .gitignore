@@ -27,6 +27,9 @@ Cargo.lock
 node_modules/
 package-lock.json
 
+# Track the admin panel lockfile for reproducible installs
+!admin-panel/package-lock.json
+
 # macOS
 .DS_Store
 /data/

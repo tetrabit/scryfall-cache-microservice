@@ -221,6 +221,14 @@ BULK_REFRESH_ENABLED=true
 BULK_REFRESH_INTERVAL_HOURS=720
 ```
 
+## Local Checks
+
+Run the standard local checks (backend + admin-panel) with:
+
+```bash
+./scripts/ci.sh
+```
+
 ## API Endpoints
 
 ### Health Checks
