@@ -134,7 +134,7 @@ API_HOST                       # Server host (default: 0.0.0.0)
 API_PORT                       # Server port (default: 8080)
 SCRYFALL_RATE_LIMIT_PER_SECOND # Rate limit (default: 10)
 SCRYFALL_BULK_DATA_TYPE        # Bulk data type (default: default_cards)
-SCRYFALL_CACHE_TTL_HOURS       # Cache TTL (default: 24)
+SCRYFALL_CACHE_TTL_HOURS       # Bulk data cache TTL in hours (default: 720 = 30 days)
 QUERY_CACHE_TTL_HOURS          # Query cache TTL (default: 24)
 QUERY_CACHE_MAX_SIZE           # Max cache entries (default: 10000)
 RUST_LOG                       # Logging level
