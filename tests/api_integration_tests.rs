@@ -1,0 +1,236 @@
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use serde_json::{json, Value};
+use tower::ServiceExt;
+
+// Helper to create test app
+async fn create_test_app() -> axum::Router {
+    use scryfall_cache::{api, cache, config, db, scryfall};
+    use std::sync::Arc;
+
+    dotenvy::dotenv().ok();
+    let config = config::Config::from_env();
+    
+    let db_pool = db::connect(&config.database).await
+        .expect("Failed to connect to database");
+    
+    let cache_manager = cache::manager::CacheManager::new(db_pool.clone());
+    let bulk_loader = scryfall::bulk_loader::BulkLoader::new(db_pool.clone());
+    let query_validator = scryfall_cache::query::QueryValidator::from_env();
+    
+    let state = Arc::new(api::handlers::AppStateInner {
+        cache_manager,
+        bulk_loader,
+        query_validator,
+    });
+    
+    api::routes::create_router(state)
+}
+
+// Helper to send request and parse JSON response
+async fn send_json_request(
+    app: &mut axum::Router,
+    method: &str,
+    uri: &str,
+) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .body(Body::empty())
+        .unwrap();
+    
+    let response = app.oneshot(request).await.unwrap();
+    let status = response.status();
+    
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap_or(json!({}));
+    
+    (status, json)
+}
+
+#[tokio::test]
+async fn test_health_endpoint() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(&mut app, "GET", "/health").await;
+    
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "healthy");
+    assert_eq!(body["service"], "scryfall-cache");
+}
+
+#[tokio::test]
+async fn test_search_cards_basic() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(&mut app, "GET", "/cards/search?q=c:red").await;
+    
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert!(body["data"].is_object());
+    assert!(body["data"]["data"].is_array());
+}
+
+#[tokio::test]
+async fn test_search_cards_invalid_query() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(&mut app, "GET", "/cards/search?q=((((").await;
+    
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["success"], false);
+    assert!(body["error"].is_object());
+    assert!(body["error"]["message"].is_string());
+}
+
+#[tokio::test]
+async fn test_search_cards_pagination() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(
+        &mut app,
+        "GET",
+        "/cards/search?q=c:blue&page=1&page_size=10"
+    ).await;
+    
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["data"]["page"], 1);
+    assert_eq!(body["data"]["page_size"], 10);
+    assert!(body["data"]["total"].is_number());
+}
+
+#[tokio::test]
+async fn test_get_card_by_id() {
+    let mut app = create_test_app().await;
+    
+    // First search for a card to get valid ID
+    let (_, search_body) = send_json_request(&mut app, "GET", "/cards/search?q=sol+ring").await;
+    
+    if let Some(cards) = search_body["data"]["data"].as_array() {
+        if let Some(first_card) = cards.first() {
+            if let Some(card_id) = first_card["id"].as_str() {
+                let uri = format!("/cards/{}", card_id);
+                let (status, body) = send_json_request(&mut app, "GET", &uri).await;
+                
+                assert_eq!(status, StatusCode::OK);
+                assert_eq!(body["success"], true);
+                assert!(body["data"]["id"].is_string());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_get_card_not_found() {
+    let mut app = create_test_app().await;
+    let fake_uuid = "00000000-0000-0000-0000-000000000000";
+    let uri = format!("/cards/{}", fake_uuid);
+    let (status, body) = send_json_request(&mut app, "GET", &uri).await;
+    
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["success"], false);
+    assert!(body["error"]["code"].as_str().unwrap().contains("NotFound"));
+}
+
+#[tokio::test]
+async fn test_named_card_exact() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(
+        &mut app,
+        "GET",
+        "/cards/named?exact=Lightning%20Bolt"
+    ).await;
+    
+    if status == StatusCode::OK {
+        assert_eq!(body["success"], true);
+        assert!(body["data"]["name"].as_str().unwrap().contains("Lightning"));
+    }
+}
+
+#[tokio::test]
+async fn test_named_card_fuzzy() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(
+        &mut app,
+        "GET",
+        "/cards/named?fuzzy=light%20bolt"
+    ).await;
+    
+    if status == StatusCode::OK {
+        assert_eq!(body["success"], true);
+        assert!(body["data"]["name"].is_string());
+    }
+}
+
+#[tokio::test]
+async fn test_autocomplete() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(
+        &mut app,
+        "GET",
+        "/cards/autocomplete?q=lightning"
+    ).await;
+    
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["object"], "catalog");
+    assert!(body["data"].is_array());
+}
+
+#[tokio::test]
+async fn test_cache_stats() {
+    let mut app = create_test_app().await;
+    let (status, body) = send_json_request(&mut app, "GET", "/cache/stats").await;
+    
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert!(body["data"]["total_cards"].is_number());
+    assert!(body["data"]["database_size_mb"].is_number());
+}
+
+#[tokio::test]
+async fn test_metrics_endpoint() {
+    let mut app = create_test_app().await;
+    
+    let request = Request::builder()
+        .method("GET")
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let text = String::from_utf8(body.to_vec()).unwrap();
+    
+    // Check for Prometheus format metrics
+    assert!(text.contains("# HELP"));
+    assert!(text.contains("# TYPE"));
+}
+
+#[tokio::test]
+async fn test_query_validation_max_length() {
+    let mut app = create_test_app().await;
+    let long_query = "a".repeat(2000); // Exceeds default 1000 char limit
+    let uri = format!("/cards/search?q={}", long_query);
+    let (status, body) = send_json_request(&mut app, "GET", &uri).await;
+    
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["success"], false);
+    assert!(body["error"]["message"].as_str().unwrap().contains("too long"));
+}
+
+#[tokio::test]
+async fn test_error_response_structure() {
+    let mut app = create_test_app().await;
+    let (_, body) = send_json_request(&mut app, "GET", "/cards/search?q=((((").await;
+    
+    // Verify ErrorResponse structure
+    assert_eq!(body["success"], false);
+    assert!(body["error"].is_object());
+    assert!(body["error"]["code"].is_string());
+    assert!(body["error"]["message"].is_string());
+    assert!(body["error"]["request_id"].is_string());
+}
