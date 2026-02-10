@@ -5,6 +5,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{error, info};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -14,6 +15,10 @@ use crate::errors::ErrorResponse;
 use crate::models::card::Card;
 use crate::query::{QueryLimits, QueryParser, QueryValidator};
 use crate::scryfall::bulk_loader::BulkLoader;
+
+lazy_static::lazy_static! {
+    static ref START_TIME: Instant = Instant::now();
+}
 
 pub type AppState = Arc<AppStateInner>;
 
@@ -175,6 +180,17 @@ pub async fn health() -> impl IntoResponse {
         "status": "healthy",
         "service": "scryfall-cache",
         "version": env!("CARGO_PKG_VERSION"),
+        "build": {
+            "version": env!("CARGO_PKG_VERSION"),
+            "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+        },
+        "environment": {
+            "rust_version": env!("CARGO_PKG_RUST_VERSION", "unknown"),
+            "database": std::env::var("DATABASE_URL")
+                .map(|url| if url.starts_with("postgres") { "postgresql" } else { "sqlite" })
+                .unwrap_or("unknown"),
+        },
+        "uptime_seconds": START_TIME.elapsed().as_secs(),
     }))
 }
 

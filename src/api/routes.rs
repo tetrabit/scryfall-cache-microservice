@@ -1,7 +1,7 @@
 use axum::{
     middleware,
     routing::{get, post},
-    Router,
+    Json, Router,
 };
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -38,6 +38,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/metrics", get(metrics::metrics_handler))
         // Admin endpoints
         .route("/admin/reload", post(admin_reload))
+        // OpenAPI spec (used by contract tests)
+        .route("/api-docs/openapi.json", get(|| async { Json(ApiDoc::openapi()) }))
         // OpenAPI documentation
         .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Add middleware (metrics first to track all requests)
