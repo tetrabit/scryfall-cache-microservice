@@ -177,23 +177,21 @@ pub async fn store_query_cache(
     pool: &PgPool,
     query_hash: &str,
     card_ids: &[Uuid],
-    ttl_hours: i32,
+    _ttl_hours: i32,
 ) -> Result<()> {
-    let card_ids_json = serde_json::to_string(card_ids).context("Failed to serialize card IDs")?;
-
     sqlx::query(
         r#"
-        INSERT INTO query_cache (query_hash, result_ids, ttl_hours)
-        VALUES ($1, $2, $3)
+        INSERT INTO query_cache (query_hash, query_text, result_ids, total_cards)
+        VALUES ($1, '', $2, $3)
         ON CONFLICT (query_hash) DO UPDATE SET
             result_ids = EXCLUDED.result_ids,
-            ttl_hours = EXCLUDED.ttl_hours,
+            total_cards = EXCLUDED.total_cards,
             last_accessed = NOW()
         "#,
     )
     .bind(query_hash)
-    .bind(&card_ids_json)
-    .bind(ttl_hours)
+    .bind(card_ids)
+    .bind(card_ids.len() as i32)
     .execute(pool)
     .await
     .context("Failed to store query cache")?;
@@ -203,12 +201,12 @@ pub async fn store_query_cache(
 
 /// Get query cache entry
 pub async fn get_query_cache(pool: &PgPool, query_hash: &str) -> Result<Option<(Vec<Uuid>, i32)>> {
-    let result: Option<(String, i32)> = sqlx::query_as(
+    let result: Option<(Vec<Uuid>, i32)> = sqlx::query_as(
         r#"
         UPDATE query_cache
         SET last_accessed = NOW()
         WHERE query_hash = $1
-        RETURNING result_ids, ttl_hours
+        RETURNING result_ids, total_cards
         "#,
     )
     .bind(query_hash)
@@ -216,25 +214,19 @@ pub async fn get_query_cache(pool: &PgPool, query_hash: &str) -> Result<Option<(
     .await
     .context("Failed to get query cache")?;
 
-    if let Some((card_ids_json, ttl_hours)) = result {
-        let card_ids: Vec<Uuid> =
-            serde_json::from_str(&card_ids_json).context("Failed to deserialize card IDs")?;
-        Ok(Some((card_ids, ttl_hours)))
-    } else {
-        Ok(None)
-    }
+    Ok(result)
 }
 
 /// Record bulk data import
 pub async fn record_bulk_import(pool: &PgPool, total_cards: i32, source: &str) -> Result<()> {
     sqlx::query(
         r#"
-        INSERT INTO bulk_data_metadata (total_cards, source, imported_at)
-        VALUES ($1, $2, NOW())
+        INSERT INTO bulk_data_metadata (bulk_type, download_uri, updated_at, total_cards, file_size_bytes)
+        VALUES ('unknown', $1, NOW(), $2, 0)
         "#,
     )
-    .bind(total_cards)
     .bind(source)
+    .bind(total_cards)
     .execute(pool)
     .await
     .context("Failed to record bulk import")?;
