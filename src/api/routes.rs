@@ -1,4 +1,5 @@
 use axum::{
+    middleware,
     routing::{get, post},
     Router,
 };
@@ -14,6 +15,7 @@ use super::handlers::{
     AppState,
 };
 use super::openapi::ApiDoc;
+use crate::metrics;
 
 pub fn create_router(state: AppState) -> Router {
     // Configure CORS
@@ -32,11 +34,14 @@ pub fn create_router(state: AppState) -> Router {
         .route("/cards/:id", get(get_card))
         // Stats endpoint
         .route("/stats", get(get_stats))
+        // Metrics endpoint (Prometheus)
+        .route("/metrics", get(metrics::metrics_handler))
         // Admin endpoints
         .route("/admin/reload", post(admin_reload))
         // OpenAPI documentation
         .merge(SwaggerUi::new("/api-docs").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Add middleware
+        // Add middleware (metrics first to track all requests)
+        .layer(middleware::from_fn(metrics::middleware::track_metrics))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         // Add shared state

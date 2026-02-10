@@ -2,6 +2,7 @@ mod api;
 mod cache;
 mod config;
 mod db;
+mod metrics;
 mod models;
 mod query;
 mod scryfall;
@@ -31,6 +32,10 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Starting Scryfall Cache Microservice v{}", env!("CARGO_PKG_VERSION"));
+
+    // Initialize metrics
+    metrics::registry::init_metrics();
+    info!("Metrics registry initialized");
 
     // Load configuration
     let config = Config::from_env().context("Failed to load configuration")?;
