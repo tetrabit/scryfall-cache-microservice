@@ -1,0 +1,31 @@
+# Cargo build configuration for faster compilation
+
+[build]
+# Use all available cores (16 cores available)
+jobs = 16
+
+# Incremental compilation (enabled by default for debug, but explicit here)
+incremental = true
+
+# Uncomment to use faster linker if available:
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]  # Requires: apt install mold
+# rustflags = ["-C", "link-arg=-fuse-ld=lld"]   # Requires: apt install lld
+
+[profile.dev]
+# Split debug info to reduce linking time
+split-debuginfo = "unpacked"
+
+# Optional: Disable debug info entirely for even faster builds (uncomment if needed)
+# debug = 0
+
+[profile.release]
+# Keep minimal debug info in release for profiling
+debug = 1
+
+# Link-time optimization for smaller, faster binaries
+lto = "thin"
+
+# Code generation units - higher = faster compilation, lower = better optimization
+codegen-units = 16
